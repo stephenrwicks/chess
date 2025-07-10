@@ -50,7 +50,6 @@ abstract class Piece extends HTMLElement {
             for (const square of this.board!.SQUARES?.values()) {
                 square.classList.remove('legal', 'active');
             }
-
             if (hoveredSquare) {
                 if (!this.legalMoves?.has(hoveredSquare.coordinate)) return;
                 this.moveTo(hoveredSquare);
@@ -116,8 +115,6 @@ abstract class Piece extends HTMLElement {
         return this.color === 'white' ? 'black' : 'white';
     }
 
-
-
 }
 
 class King extends Piece {
@@ -126,7 +123,7 @@ class King extends Piece {
 
     constructor(color: 'white' | 'black', currentSquare: Coordinate, board: Board) {
         super(color, currentSquare, board);
-        this.textContent = '♚';
+        this.textContent = this.color === 'white' ? '♔' : '♚';
     }
 
     get legalMoves(): Set<Coordinate> {
@@ -145,7 +142,7 @@ class King extends Piece {
                 if (!potentialCoordinate) continue;
                 if (this.board.getPieceByCoordinate(potentialCoordinate)?.color === this.color) continue;
                 // This is probably not necessary, since we have to check if any given move puts king in check
-                if (this.board.isCoordinateAttacked(potentialCoordinate, this.color === 'white' ? 'black' : 'white')) continue;
+                if (this.board.isCoordinateAttacked(potentialCoordinate, this.oppositeColor)) continue;
                 moveSet.add(potentialCoordinate);
             }
         }
@@ -172,7 +169,7 @@ class King extends Piece {
 
     get checkingPieces(): Piece[] {
         if (!this.board) return [];
-        return this.board.getRemainingPieces(this.color === 'white' ? 'black' : 'white')
+        return this.board.getRemainingPieces(this.oppositeColor)
             .filter(piece => piece.squaresAttacking.has(this.currentCoordinate));
     }
 
@@ -187,13 +184,12 @@ class King extends Piece {
         if (this.hasMoved) return false;
         if (this.isInCheck) return false;
         const rank = this.color === 'white' ? '1' : '8';
-        const attackingColor = this.color === 'white' ? 'black' : 'white';
         if (!!this.board.getPieceByCoordinate(`f${rank}`)) return false;
         if (!!this.board.getPieceByCoordinate(`g${rank}`)) return false;
         const rook = this.board.getPieceByCoordinate(`h${rank}`);
         if (!rook || rook.hasMoved) return false;
-        if (this.board?.isCoordinateAttacked(`f${rank}`, attackingColor)) return false;
-        if (this.board?.isCoordinateAttacked(`g${rank}`, attackingColor)) return false;
+        if (this.board?.isCoordinateAttacked(`f${rank}`, this.oppositeColor)) return false;
+        if (this.board?.isCoordinateAttacked(`g${rank}`, this.oppositeColor)) return false;
         return `g${rank}`;
     }
 
@@ -202,14 +198,13 @@ class King extends Piece {
         if (this.hasMoved) return false;
         if (this.isInCheck) return false;
         const rank = this.color === 'white' ? '1' : '8';
-        const attackingColor = this.color === 'white' ? 'black' : 'white';
         if (!!this.board.getPieceByCoordinate(`d${rank}`)) return false;
         if (!!this.board.getPieceByCoordinate(`c${rank}`)) return false;
         if (!!this.board.getPieceByCoordinate(`b${rank}`)) return false;
         const rook = this.board.getPieceByCoordinate(`a${rank}`);
         if (!rook || rook.hasMoved) return false;
-        if (this.board?.isCoordinateAttacked(`d${rank}`, attackingColor)) return false;
-        if (this.board?.isCoordinateAttacked(`c${rank}`, attackingColor)) return false;
+        if (this.board?.isCoordinateAttacked(`d${rank}`, this.oppositeColor)) return false;
+        if (this.board?.isCoordinateAttacked(`c${rank}`, this.oppositeColor)) return false;
         return `c${rank}`;
     }
 
@@ -245,7 +240,7 @@ class Queen extends Piece {
 
     constructor(color: 'white' | 'black', currentSquare: Coordinate, board: Board) {
         super(color, currentSquare, board);
-        this.textContent = '♛';
+        this.textContent = this.color === 'white' ? '♕' : '♛';
     }
 
     get legalMoves() {
@@ -273,7 +268,7 @@ class Rook extends Piece {
 
     constructor(color: 'white' | 'black', currentSquare: Coordinate, board: Board) {
         super(color, currentSquare, board);
-        this.textContent = '♜';
+        this.textContent = this.color === 'white' ? '♖' : '♜';
     }
 
     get legalMoves() {
@@ -296,7 +291,7 @@ class Bishop extends Piece {
 
     constructor(color: 'white' | 'black', currentSquare: Coordinate, board: Board) {
         super(color, currentSquare, board);
-        this.textContent = '♝';
+        this.textContent = this.color === 'white' ? '♗' : '♝';
     }
 
     get legalMoves() {
@@ -320,7 +315,7 @@ class Knight extends Piece {
 
     constructor(color: 'white' | 'black', currentSquare: Coordinate, board: Board) {
         super(color, currentSquare, board);
-        this.textContent = '♞';
+        this.textContent = this.color === 'white' ? '♘' : '♞';
     }
 
     get legalMoves() {
@@ -364,11 +359,10 @@ class Knight extends Piece {
 class Pawn extends Piece {
     symbol = '';
     value = 1;
-    icon = '♟';
 
     constructor(color: 'white' | 'black', coordinate: Coordinate, board: Board) {
         super(color, coordinate, board);
-        this.textContent = this.icon;
+        this.textContent = this.color === 'white' ? '♙' : '♟';
     }
 
     get legalMoves() {
