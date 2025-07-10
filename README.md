@@ -1,6 +1,6 @@
 Attempting to make a fully working chess UI in TS.
 
-I am using custom elements for the board, squares, and pieces. Right now <sw-board></sw-board> in html should initialize everything.
+I am using custom elements for the board, squares, and pieces. Right now the sw-board element in html should initialize everything.
 
 This is the first time I've used layers of inheritance with custom elements. It makes perfect sense because Piece handles the drag and drop functionality, etc.
 
