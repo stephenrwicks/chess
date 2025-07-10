@@ -2,9 +2,11 @@
 <html>
 
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chess</title>
     <style>
         * {
+            font-size: 16px;
             box-sizing: border-box;
         }
 
@@ -16,10 +18,24 @@
             background-color: antiquewhite;
         }
 
+        sw-board {
+            width: fit-content;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 0px;
+        }
+
+        sw-board[data-to-move="white"] .piece.white {
+            cursor: grab;
+        }
+
+        sw-board[data-to-move="black"] .piece.black {
+            cursor: grab;
+        }
+
         .piece {
             font-size: 3.7em;
             user-select: none;
-            cursor: grab;
             color: white;
         }
 
@@ -31,13 +47,6 @@
             background-color: transparent;
         }
 
-        .board {
-            width: fit-content;
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            gap: 0px;
-        }
-
         sw-square {
             display: grid;
             place-items: center;
@@ -46,45 +55,27 @@
             background-color: #9f90b0;
         }
 
-        sw-square[data-coordinate="a1"],
-        sw-square[data-coordinate="b2"],
-        sw-square[data-coordinate="c1"],
-        sw-square[data-coordinate="d2"],
-        sw-square[data-coordinate="e1"],
-        sw-square[data-coordinate="f2"],
-        sw-square[data-coordinate="g1"],
-        sw-square[data-coordinate="h2"],
-        sw-square[data-coordinate="a3"],
-        sw-square[data-coordinate="b4"],
-        sw-square[data-coordinate="c3"],
-        sw-square[data-coordinate="d4"],
-        sw-square[data-coordinate="e3"],
-        sw-square[data-coordinate="f4"],
-        sw-square[data-coordinate="g3"],
-        sw-square[data-coordinate="h4"],
-        sw-square[data-coordinate="a5"],
-        sw-square[data-coordinate="b6"],
-        sw-square[data-coordinate="c5"],
-        sw-square[data-coordinate="d6"],
-        sw-square[data-coordinate="e5"],
-        sw-square[data-coordinate="f6"],
-        sw-square[data-coordinate="g5"],
-        sw-square[data-coordinate="h6"],
-        sw-square[data-coordinate="a7"],
-        sw-square[data-coordinate="b8"],
-        sw-square[data-coordinate="c7"],
-        sw-square[data-coordinate="d8"],
-        sw-square[data-coordinate="e7"],
-        sw-square[data-coordinate="f8"],
-        sw-square[data-coordinate="g7"],
-        sw-square[data-coordinate="h8"] {
+        sw-square.dark {
             background-color: #7d4a8d;
         }
+
+        sw-square.legal {
+            box-shadow: inset 0 0 0 .3rem goldenrod;
+        }
+
+        sw-square.active {
+            box-shadow: inset 0 0 0 .3rem hsla(120, 100%, 12.5%, 1);
+        }
+
+        sw-square.check {
+            box-shadow: inset 0 0 0 .3rem red;
+        }
     </style>
+    <script src="chess.js"></script>
 </head>
 
 <body>
-    <script src="chess.js"></script>
+    <sw-board></sw-board>
 </body>
 
 </html>
