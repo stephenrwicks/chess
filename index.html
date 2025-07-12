@@ -6,6 +6,7 @@
     <title>Chess</title>
     <style>
         * {
+            --sq: 5rem;
             font-size: 16px;
             box-sizing: border-box;
         }
@@ -54,8 +55,8 @@
         sw-square {
             display: grid;
             place-items: center;
-            height: 5rem;
-            width: 5rem;
+            height: var(--sq);
+            width: var(--sq);
             background-color: #9f90b0;
         }
 
@@ -74,12 +75,17 @@
         sw-square.check {
             box-shadow: inset 0 0 0 .3rem red;
         }
+
+        sw-square.checkmate {
+            background-color: red;
+        }
     </style>
     <script src="chess.js"></script>
 </head>
 
 <body>
     <sw-board></sw-board>
+    <script>const x = document.querySelector('sw-board');</script>
 </body>
 
 </html>
