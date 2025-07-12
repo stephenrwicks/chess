@@ -22,7 +22,7 @@ abstract class Piece extends HTMLElement {
         this.#board = board;
         this.color = color;
         this.className = `piece ${color}`;
-        board.SQUARES.get(coordinate)?.replaceChildren(this);
+        board.squares.get(coordinate)?.replaceChildren(this);
         let offsetX = 0;
         let offsetY = 0;
         const handleDown = (e: PointerEvent) => {
@@ -51,7 +51,7 @@ abstract class Piece extends HTMLElement {
             const hoveredSquare = document.elementsFromPoint(e.clientX, e.clientY).find(el => el instanceof Square) as Square ?? null;
             this.removeAttribute('style');
             window.removeEventListener('pointermove', handleMove);
-            for (const square of this.board!.SQUARES?.values()) {
+            for (const square of this.board!.squares?.values()) {
                 square.classList.remove('legal', 'active');
             }
             if (hoveredSquare) {
@@ -78,13 +78,28 @@ abstract class Piece extends HTMLElement {
     memoizeLegalMoves(moveSet: Set<Coordinate>) {
 
     }
-    // We can make this not abstract and have it grab the memoized moves if they are there
-    abstract get legalMoves(): Set<Coordinate>;
+
+
+
+    abstract get moveSet(): Set<Coordinate>
+
+    get legalMoves(): Set<Coordinate> {
+        const moveSet = this.moveSet;
+        if (!this.board) return moveSet;
+        this.board.removeMovesThatPutPlayerIntoCheck(moveSet, this.color);
+        return moveSet;
+    }
+
+    // get squaresAttacking(): Set<Coordinate> {
+    //     return this.moveSet;
+    // }
+
+    // // We can make this not abstract and have it grab the memoized moves if they are there
+    // abstract get legalMoves(): Set<Coordinate>
     // #memoizedLegalMoves: Set<Coordinate> | null = null;
     // get legalMoves() {
     //     if (this.#memoizedLegalMoves) return this.#memoizedLegalMoves;
     // }
-    abstract get squaresAttacking(): Set<Coordinate>;
 
 
     get board() {
@@ -99,7 +114,7 @@ abstract class Piece extends HTMLElement {
     #highlightLegalMoves() {
         if (!this.board) return;
         for (const coordinate of this.legalMoves) {
-            const square = this.board.SQUARES.get(coordinate);
+            const square = this.board.squares.get(coordinate);
             if (!square) return;
             square.classList.add('legal');
         }
@@ -141,14 +156,16 @@ abstract class Piece extends HTMLElement {
 
     /** Gets legal rook/bishop moves in a given direction, including capture */
     getStraightLineMovesWithCapture(direction: TDirection): Coordinate[] {
-        if (!this.board) return [];
         const coordinates: Coordinate[] = [];
+        if (!this.board) return coordinates;
         let current = this.currentCoordinate;
         while (true) {
             const coordinate = this.board.getAdjacentCoordinate(current, direction);
             if (!coordinate) break;
             const pieceAtCoordinate = this.board.getPieceByCoordinate(coordinate);
-            if (pieceAtCoordinate?.color === this.color) break;
+            // Break here if the piece is the same color as the moving piece only if it is this player's turn
+            // So a rook/bishop/queen can't capture its own piece, but it can defend it from king capturing it
+            if (pieceAtCoordinate?.color === this.color && this.board.currentMove === this.color) break;
             coordinates.push(coordinate);
             // If a piece is determining its legal moves, it needs to know if it is exposing the king.
             // So here we "see through" (by excluding) the active piece, i.e., the piece you are currently dragging,
@@ -174,35 +191,33 @@ class King extends Piece {
         this.textContent = this.color === 'white' ? '♔' : '♚';
     }
 
-    get legalMoves(): Set<Coordinate> {
+    get legalMoves() {
+        const moveSet = this.moveSet;
+        if (!this.board) return moveSet;
+        for (const coordinate of moveSet) {
+            if (this.board.isCoordinateAttacked(coordinate, this.oppositeColor)) moveSet.delete(coordinate);
+        }
+        return moveSet;
+    }
+
+    get moveSet(): Set<Coordinate> {
         const moveSet: Set<Coordinate> = new Set();
         if (!this.board) return moveSet;
-        const castleKingside = this.getCastleKingside();
-        const castleQueenside = this.getCastleQueenside();
+        const castleKingside = this.castleKingsideCoordinate;
+        const castleQueenside = this.castleQueensideCoordinate;
         if (castleKingside) moveSet.add(castleKingside);
         if (castleQueenside) moveSet.add(castleQueenside);
         for (const direction of ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft'] as TDirection[]) {
-            const potentialCoordinate = this.board.getAdjacentCoordinate(this.currentCoordinate, direction);
-            if (!potentialCoordinate) continue;
-            if (this.board.getPieceByCoordinate(potentialCoordinate)?.color === this.color) continue;
-            // This is probably not necessary, since we have to check if any given move puts king in check
-            if (this.board.isCoordinateAttacked(potentialCoordinate, this.oppositeColor)) continue;
-            moveSet.add(potentialCoordinate);
-        }
-        return moveSet;
-    }
-
-    get squaresAttacking(): Set<Coordinate> {
-        const moveSet: Set<Coordinate> = new Set();
-        if (!this.board) return moveSet;
-        for (const direction of ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft'] as TDirection[]) {
             const coordinate = this.board.getAdjacentCoordinate(this.currentCoordinate, direction);
-            if (coordinate) moveSet.add(coordinate);
+            if (!coordinate) continue;
+            if (this.board.getPieceByCoordinate(coordinate)?.color === this.color) continue;
+            moveSet.add(coordinate);
         }
         return moveSet;
     }
 
-    getCastleKingside(): Coordinate | null {
+
+    get castleKingsideCoordinate(): Coordinate | null {
         if (!this.board) return null;
         if (this.hasMoved) return null;
         if (this.board.isInCheck(this.color)) return null;
@@ -216,7 +231,7 @@ class King extends Piece {
         return `g${rank}`;
     }
 
-    getCastleQueenside(): Coordinate | null {
+    get castleQueensideCoordinate(): Coordinate | null {
         if (!this.board) return null;
         if (this.hasMoved) return null;
         if (this.board.isInCheck(this.color)) return null;
@@ -234,22 +249,22 @@ class King extends Piece {
     moveTo(square: Square) {
         if (!this.board) return;
         if (this.currentCoordinate === 'e1' && square.coordinate === 'g1') {
-            const f1 = this.board.SQUARES.get('f1');
+            const f1 = this.board.squares.get('f1');
             if (!f1) return;
             this.board.getPieceByCoordinate('h1')?.moveTo(f1);
         }
         else if (this.currentCoordinate === 'e8' && square.coordinate === 'g8') {
-            const f8 = this.board.SQUARES.get('f8');
+            const f8 = this.board.squares.get('f8');
             if (!f8) return;
             this.board.getPieceByCoordinate('h8')?.moveTo(f8);
         }
         else if (this.currentCoordinate === 'e1' && square.coordinate === 'c1') {
-            const d1 = this.board.SQUARES.get('d1');
+            const d1 = this.board.squares.get('d1');
             if (!d1) return;
             this.board.getPieceByCoordinate('a1')?.moveTo(d1);
         }
         else if (this.currentCoordinate === 'e8' && square.coordinate === 'c8') {
-            const d8 = this.board.SQUARES.get('d8');
+            const d8 = this.board.squares.get('d8');
             if (!d8) return;
             this.board.getPieceByCoordinate('a8')?.moveTo(d8);
         }
@@ -268,23 +283,7 @@ class Queen extends Piece {
         this.textContent = this.color === 'white' ? '♕' : '♛';
     }
 
-    get legalMoves() {
-        if (!this.board) return new Set() as Set<Coordinate>;
-        const moveSet = new Set([
-            ...this.getStraightLineMovesWithCapture('up'),
-            ...this.getStraightLineMovesWithCapture('upright'),
-            ...this.getStraightLineMovesWithCapture('right'),
-            ...this.getStraightLineMovesWithCapture('downright'),
-            ...this.getStraightLineMovesWithCapture('down'),
-            ...this.getStraightLineMovesWithCapture('downleft'),
-            ...this.getStraightLineMovesWithCapture('left'),
-            ...this.getStraightLineMovesWithCapture('upleft')
-        ]);
-        this.board.removeMovesThatPutPlayerIntoCheck(moveSet, this.color);
-        return moveSet;
-    }
-
-    get squaresAttacking() {
+    get moveSet() {
         const moveSet = new Set([
             ...this.getStraightLineMovesWithCapture('up'),
             ...this.getStraightLineMovesWithCapture('upright'),
@@ -309,19 +308,7 @@ class Rook extends Piece {
         this.textContent = this.color === 'white' ? '♖' : '♜';
     }
 
-    get legalMoves() {
-        if (!this.board) return new Set() as Set<Coordinate>;
-        const moveSet = new Set([
-            ...this.getStraightLineMovesWithCapture('up'),
-            ...this.getStraightLineMovesWithCapture('down'),
-            ...this.getStraightLineMovesWithCapture('left'),
-            ...this.getStraightLineMovesWithCapture('right')
-        ]);
-        this.board.removeMovesThatPutPlayerIntoCheck(moveSet, this.color);
-        return moveSet;
-    }
-
-    get squaresAttacking() {
+    get moveSet() {
         const moveSet = new Set([
             ...this.getStraightLineMovesWithCapture('up'),
             ...this.getStraightLineMovesWithCapture('down'),
@@ -341,19 +328,7 @@ class Bishop extends Piece {
         this.textContent = this.color === 'white' ? '♗' : '♝';
     }
 
-    get legalMoves() {
-        if (!this.board) return new Set() as Set<Coordinate>;
-        const moveSet = new Set([
-            ...this.getStraightLineMovesWithCapture('upright'),
-            ...this.getStraightLineMovesWithCapture('downright'),
-            ...this.getStraightLineMovesWithCapture('downleft'),
-            ...this.getStraightLineMovesWithCapture('upleft')
-        ]);
-        this.board.removeMovesThatPutPlayerIntoCheck(moveSet, this.color);
-        return moveSet;
-    }
-
-    get squaresAttacking() {
+    get moveSet() {
         const moveSet = new Set([
             ...this.getStraightLineMovesWithCapture('upright'),
             ...this.getStraightLineMovesWithCapture('downright'),
@@ -374,41 +349,7 @@ class Knight extends Piece {
         this.textContent = this.color === 'white' ? '♘' : '♞';
     }
 
-    get legalMoves() {
-        if (!this.board) return new Set() as Set<Coordinate>;
-        const moveSet: Set<Coordinate> = new Set();
-
-        const upLeft = this.board.getAdjacentCoordinate(this.currentCoordinate, 'upleft');
-        const upTwoLeftOne = upLeft && this.board.getAdjacentCoordinate(upLeft, 'up');
-        if (upTwoLeftOne) moveSet.add(upTwoLeftOne);
-        const upRight = this.board.getAdjacentCoordinate(this.currentCoordinate, 'upright');
-        const upTwoRightOne = upRight && this.board.getAdjacentCoordinate(upRight, 'up');
-        if (upTwoRightOne) moveSet.add(upTwoRightOne);
-        const right = this.board.getAdjacentCoordinate(this.currentCoordinate, 'right');
-        const rightTwoUpOne = right && this.board.getAdjacentCoordinate(right, 'upright');
-        if (rightTwoUpOne) moveSet.add(rightTwoUpOne);
-        const rightTwoDownOne = right && this.board.getAdjacentCoordinate(right, 'downright');
-        if (rightTwoDownOne) moveSet.add(rightTwoDownOne);
-        const downRight = this.board.getAdjacentCoordinate(this.currentCoordinate, 'downright');
-        const downTwoRightOne = downRight && this.board.getAdjacentCoordinate(downRight, 'down');
-        if (downTwoRightOne) moveSet.add(downTwoRightOne);
-        const downLeft = this.board.getAdjacentCoordinate(this.currentCoordinate, 'downleft');
-        const downTwoLeftOne = downLeft && this.board.getAdjacentCoordinate(downLeft, 'down');
-        if (downTwoLeftOne) moveSet.add(downTwoLeftOne);
-        const left = this.board.getAdjacentCoordinate(this.currentCoordinate, 'left');
-        const leftTwoUpOne = left && this.board.getAdjacentCoordinate(left, 'upleft');
-        if (leftTwoUpOne) moveSet.add(leftTwoUpOne);
-        const leftTwoDownOne = left && this.board.getAdjacentCoordinate(left, 'downleft');
-        if (leftTwoDownOne) moveSet.add(leftTwoDownOne);
-        for (const coordinate of moveSet) {
-            if (this.board.getPieceByCoordinate(coordinate)?.color === this.color) moveSet.delete(coordinate);
-        }
-        this.board.removeMovesThatPutPlayerIntoCheck(moveSet, this.color);
-        return moveSet;
-    }
-
-    // When calculating check logic, this should not factor in putting itself into check, but when calculating other logic it should
-    get squaresAttacking() {
+    get moveSet() {
         if (!this.board) return new Set() as Set<Coordinate>;
         const moveSet: Set<Coordinate> = new Set();
         const upLeft = this.board.getAdjacentCoordinate(this.currentCoordinate, 'upleft');
@@ -494,7 +435,7 @@ class Pawn extends Piece {
         return moveSet;
     }
 
-    get squaresAttacking(): Set<Coordinate> {
+    get moveSet(): Set<Coordinate> {
         const moveSet: Set<Coordinate> = new Set();
         if (!this.board) return moveSet;
         if (this.color === 'white') {
@@ -551,16 +492,13 @@ class Square extends HTMLElement {
         return null;
     }
 
-    clear() {
-        this.replaceChildren();
-    }
 }
 
 
 // Emit custom events to pass pieces outside the board
 class Board extends HTMLElement {
 
-    SQUARES: Map<Coordinate, Square> = new Map();
+    squares: Map<Coordinate, Square> = new Map();
 
     currentMove: 'white' | 'black' = 'white';
     moveList: Move[] = [];
@@ -575,7 +513,7 @@ class Board extends HTMLElement {
         for (const rank of ranks) {
             for (const file of files) {
                 const square = new Square(`${file}${rank}`);
-                this.SQUARES.set(`${file}${rank}`, square);
+                this.squares.set(`${file}${rank}`, square);
             }
         }
         this.#whiteKing = new King('white', 'e1', this);
@@ -601,7 +539,7 @@ class Board extends HTMLElement {
     }
 
     connectedCallback() {
-        this.replaceChildren(...this.SQUARES.values());
+        this.replaceChildren(...this.squares.values());
         this.dataset.toMove = this.currentMove;
     }
 
@@ -645,53 +583,55 @@ class Board extends HTMLElement {
     }
 
     get squaresThatBlockOrRemoveCheckingPiece(): Set<Coordinate> | null {
+        const king = this.currentMove === 'white' ? this.#whiteKing : this.#blackKing;
+        if (!king) return null;
         if (!this.isInCheck(this.currentMove)) return null;
         const moveSet: Set<Coordinate> = new Set();
-        const king = this.currentMove === 'white' ? this.#whiteKing : this.#blackKing;
-        if (!king) return moveSet;
-        const checkingLongRangePieces = this.getRemainingPieces(this.currentMove === 'white' ? 'black' : 'white')
-        .filter(p => (p instanceof Queen || p instanceof Rook || p instanceof Bishop) && p.squaresAttacking.has(king.currentCoordinate));
-        for (const piece of checkingLongRangePieces) {
-            const direction = this.getDirectionBetweenTwoCoordinates(piece.currentCoordinate, king.currentCoordinate);
-            for (const coordinate of piece.getStraightLineMovesWithCapture(direction)) moveSet.add(coordinate);
-            /// if instanceof queen or rook or bishop get squares in between
+        const checkingPieces = this.getRemainingPieces(this.currentMove === 'white' ? 'black' : 'white').filter(p => p.moveSet.has(king.currentCoordinate));
+        if (checkingPieces.length > 1) return moveSet; // Double check. Return immediately, can't be removed or blocked
+        for (const piece of checkingPieces) {
+            moveSet.add(piece.currentCoordinate); // Add square that captures piece
+            if (piece instanceof Queen || piece instanceof Rook || piece instanceof Bishop) {
+                // Allow blocking. You can't block a pawn or knight
+                const direction = this.getDirectionBetweenTwoCoordinates(piece.currentCoordinate, king.currentCoordinate);
+                for (const coordinate of piece.getStraightLineMovesWithCapture(direction)) moveSet.add(coordinate);
+            }
         }
         moveSet.delete(king.currentCoordinate);
         return moveSet;
     }
 
     getPieceByCoordinate(coordinate: Coordinate) {
-        return this.SQUARES.get(coordinate)?.piece ?? null;
+        return this.squares.get(coordinate)?.piece ?? null;
     }
 
     getRemainingPieces(color: 'white' | 'black'): Piece[] {
-        return [...this.SQUARES.values()].map(sq => sq.piece).filter(p => (p instanceof Piece) && p.color === color) as Piece[];
+        const pieces: Piece[] = [];
+        for (const sq of this.squares.values()) {
+            if (sq.piece instanceof Piece && sq.piece.color === color) pieces.push(sq.piece);
+        }
+        return pieces;
     }
 
     isCoordinateAttacked(coordinate: Coordinate, attackingColor: 'white' | 'black') {
-        return this.getRemainingPieces(attackingColor).some(piece => piece.squaresAttacking.has(coordinate));
+        return this.getRemainingPieces(attackingColor).some(piece => piece.moveSet.has(coordinate));
     }
 
     removeMovesThatPutPlayerIntoCheck(moveSet: Set<Coordinate>, color: 'white' | 'black') {
-        // document.querySelector('sw-king').squaresAttacking;
-        // Determining "squaresAttacking" for any rook, queen, bishop, or knight creates infinite recursion here
-        // Which means there is an issue with squaresAttacking calling legalMoves,
-        // because it then calls this method
         const forcedMoves = this.squaresThatBlockOrRemoveCheckingPiece;
         if (forcedMoves) {
-            // Delete any move that isn't a forced move
-            // Wny not just return forced moves here?
             for (const move of moveSet) {
+                // We are in check. Delete moves that aren't in the forced move list.
                 if (!forcedMoves.has(move)) moveSet.delete(move);
             }
         }
         else {
             const king = color === 'white' ? this.#whiteKing : this.#blackKing;
             if (!king) throw new Error('No king found.');
-            // Delete move if it exposes king. "Preflight" check to determine if king is attacked
+            // Delete move if it exposes king.
             for (const move of moveSet) {
                 for (const piece of this.getRemainingPieces(color === 'white' ? 'black' : 'white')) {
-                    if (piece.squaresAttacking.has(king.currentCoordinate)) moveSet.delete(move);
+                    if (piece.moveSet.has(king.currentCoordinate)) moveSet.delete(move);
                 }
             }
         }
@@ -728,7 +668,7 @@ class Board extends HTMLElement {
     }
 
     clearSquareStyling() {
-        for (const square of this.SQUARES.values()) {
+        for (const square of this.squares.values()) {
             square.classList.remove('legal', 'active', 'check', 'checkmate');
         }
     }
@@ -742,7 +682,9 @@ class Board extends HTMLElement {
     }
 
     loadState(fen: string) {
-
+        for (const square of this.squares.values()) {
+            square.replaceChildren();
+        }
     }
 
 }
