@@ -181,12 +181,16 @@ class King extends Piece {
         const moveSet = new Set();
         if (!this.board)
             return moveSet;
-        const castleKingside = this.castleKingsideCoordinate;
-        const castleQueenside = this.castleQueensideCoordinate;
-        if (castleKingside)
-            moveSet.add(castleKingside);
-        if (castleQueenside)
-            moveSet.add(castleQueenside);
+        if (this.board.currentMove === this.color) {
+            // Castling can't be an attacking move against the enemy king,
+            // so we only add this here, otherwise we get infinite recursion
+            const castleKingside = this.castleKingsideCoordinate;
+            const castleQueenside = this.castleQueensideCoordinate;
+            if (castleKingside)
+                moveSet.add(castleKingside);
+            if (castleQueenside)
+                moveSet.add(castleQueenside);
+        }
         for (const direction of ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft']) {
             const coordinate = this.board.getAdjacentCoordinate(this.currentCoordinate, direction);
             if (!coordinate)
@@ -448,11 +452,18 @@ class Pawn extends Piece {
     moveTo(square) {
         if (!this.board)
             return;
+        const oldRank = Number(this.currentCoordinate[1]);
         super.moveTo(square);
-        const rank = square.coordinate[1];
-        if (this.color === 'white' && rank === '8' || this.color === 'black' && rank === '1') {
+        const rank = Number(square.coordinate[1]);
+        if (this.color === 'white' && rank === 8 || this.color === 'black' && rank === 1) {
             this.replaceWith(new Queen(this.color, square.coordinate, this.board)); // Promotion dialog
         }
+        const isTwoSquares = Math.abs(Number(rank) - Number(oldRank)) > 1;
+    }
+    setAsEnPassantable() {
+        if (!this.board)
+            return;
+        this.board.enPassantablePawn = this;
     }
     promote() {
     }
@@ -485,6 +496,7 @@ class Board extends HTMLElement {
     currentMove = 'white';
     moveList = [];
     enPassantablePawn = null;
+    #threeFoldRepetitionCounter = new Map();
     #whiteKing = null;
     #blackKing = null;
     constructor() {
@@ -615,7 +627,7 @@ class Board extends HTMLElement {
         else {
             const king = color === 'white' ? this.#whiteKing : this.#blackKing;
             if (!king)
-                throw new Error('No king found.');
+                return;
             // Delete move if it exposes king.
             for (const move of moveSet) {
                 for (const piece of this.getRemainingPieces(color === 'white' ? 'black' : 'white')) {
@@ -641,11 +653,26 @@ class Board extends HTMLElement {
             return false;
         return this.getRemainingPieces(color).every(p => p.legalMoves.size === 0);
     }
+    isStalemate() {
+        return !this.isInCheck(this.currentMove) && this.getRemainingPieces(this.currentMove).every(p => p.legalMoves.size === 0);
+    }
+    isInsufficientMaterial() {
+    }
+    isThreefoldRepetition() {
+        // const fen = this.getFen();
+        // let numberOfReps = this.#threeFoldRepetitionCounter.get(this.getFen()) ?? 0;
+        // numberOfReps++;
+        // this.#threeFoldRepetitionCounter.set(fen, numberOfReps);
+        // return numberOfReps >= 3;
+        return false;
+    }
     changeMove() {
         this.currentMove = this.currentMove === 'white' ? 'black' : 'white';
         this.dataset.toMove = this.currentMove;
         this.clearSquareStyling();
-        if (this.isInCheckmate(this.currentMove)) {
+        if (this.isThreefoldRepetition()) {
+        }
+        else if (this.isInCheckmate(this.currentMove)) {
             const king = this.currentMove === 'white' ? this.#whiteKing : this.#blackKing;
             if (!king)
                 return;
@@ -657,6 +684,9 @@ class Board extends HTMLElement {
                 return;
             king.square?.classList.add('check');
         }
+        if (!(this.enPassantablePawn?.color === (this.currentMove === 'white' ? 'black' : 'white'))) {
+            this.enPassantablePawn = null;
+        }
     }
     clearSquareStyling() {
         for (const square of this.squares.values()) {
@@ -667,10 +697,13 @@ class Board extends HTMLElement {
     }
     forward() {
     }
-    loadState(fen) {
+    loadFen(fen) {
         for (const square of this.squares.values()) {
             square.replaceChildren();
         }
+    }
+    getFen() {
+        return '';
     }
 }
 customElements.define('sw-king', King);
