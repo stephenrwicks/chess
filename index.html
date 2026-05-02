@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chess</title>
+    <!-- <link href="https://fonts.cdnfonts.com/css/chess-alpha" rel="stylesheet">
+    <link rel="stylesheet" href="https://fontlibrary.org//face/chess">
+    <link href="https://fonts.cdnfonts.com/css/wisdom-chess" rel="stylesheet"> -->
+    <style>
+        * {
+            --sq: 5rem;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0px;
+            display: grid;
+            place-items: center;
+            height: 100vh;
+            background-color: antiquewhite;
+        }
+
+        .board {
+            width: fit-content;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 0px;
+        }
+
+        .board[data-to-move="white"] .piece.white {
+            cursor: pointer;
+        }
+
+        .board[data-to-move="black"] .piece.black {
+            cursor: pointer;
+        }
+
+        .piece {
+            /* font-family: 'Chess Alpha', sans-serif;
+            font-family: 'ChessMedium';
+            font-family: 'Wisdom Chess', sans-serif; */
+            font-size: 3.7em;
+            user-select: none;
+
+        }
+
+        .piece.w {
+            color: white;
+        }
+
+        .piece.b {
+            color: black
+        }
+
+        .piece::selection {
+            background-color: transparent;
+        }
+
+        .square {
+            display: grid;
+            place-items: center;
+            height: var(--sq);
+            width: var(--sq);
+            background-color: #9f90b0;
+        }
+
+        .square.dark {
+            background-color: #7d4a8d;
+        }
+
+        .square.legal {
+            box-shadow: inset 0 0 0 .3rem goldenrod;
+        }
+
+        .square.active {
+            box-shadow: inset 0 0 0 .3rem hsla(120, 100%, 12.5%, 1);
+        }
+
+        .square.check {
+            box-shadow: inset 0 0 0 .3rem red;
+        }
+
+        .square.checkmate {
+            background-color: red;
+        }
+    </style>
+
+</head>
+
+<body>
+    <script src="chess2.js"></script>
+</body>
+
+</html>
