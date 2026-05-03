@@ -1,94 +1,114 @@
-
-type TFile = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h';
-type TRank = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
-type Coordinate = `${TFile}${TRank}`;
+type Coordinate = `${'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h'}${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
 type Direction = 'up' | 'upright' | 'right' | 'downright' | 'down' | 'downleft' | 'left' | 'upleft';
-type Piece = ReturnType<typeof buildPiece>;
-
 type PieceNotation = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p';
 
-const buildPiece = (pieceNotation: PieceNotation) => {
-    const EL = document.createElement('div');
-    let legalMovesMemo: Set<Coordinate> | null = null;
-    let isDraggable = false;
-    let hasMoved = false;
-    let isMoving = false;
-    let offsetX = 0;
-    let offsetY = 0;
+class ChessGame {
 
-    const highlightLegalMoves = () => {
-        // Send an event to the board. The board does this.
+    board = new ChessBoard();
+    #fen = '';
+    #pieceSymbols = {
+        k: '♚',
+        q: '♛',
+        r: '♜',
+        b: '♝',
+        n: '♞',
+        p: '♟',
+        K: '♔',
+        Q: '♕',
+        R: '♖',
+        B: '♗',
+        N: '♘',
+        P: '♙',
     };
 
-    const handleDown = (e: PointerEvent) => {
-        //if (this.board!.currentMove !== this.color) return;
-        isMoving = true;
-        EL.style.position = 'absolute';
-        offsetX = EL.getBoundingClientRect().width / 2;
-        offsetY = EL.getBoundingClientRect().height / 2;
-        const left = e.clientX - offsetX;
-        const top = e.clientY - offsetY;
-        EL.style.left = `${left}px`;
-        EL.style.top = `${top}px`;
-        highlightLegalMoves();
-        window.addEventListener('pointermove', handleMove);
-        window.addEventListener('pointerup', handleUp, { once: true });
-        //if (this.square) this.square.classList.add('active');
-    };
-    const handleMove = (e: PointerEvent) => {
-        const left = e.clientX - offsetX;
-        const top = e.clientY - offsetY;
-        EL.style.left = `${left}px`;
-        EL.style.top = `${top}px`;
-    };
-    const handleUp = (e: PointerEvent) => {
-        const hoveredSquare = document.elementsFromPoint(e.clientX, e.clientY).find(el => el instanceof HTMLDivElement && el.classList.contains('square')) ?? null;
-        EL.removeAttribute('style');
-        window.removeEventListener('pointermove', handleMove);
-        // Check legal move
-        isMoving = false;
-    };
 
-    EL.addEventListener('pointerdown', handleDown);
+    get fen() {
+        return this.#fen;
+    }
 
-    const PIECE = {
-        get el() {
-            return EL;
-        },
-        get color(): 'w' | 'b' {
-            if (['K', 'Q', 'R', 'B', 'N', 'P'].includes(this.type)) return 'w';
-            return 'b';
-        },
-        highlightLegalMoves() {
+    get fenReader() {
+        return new FenReader(this.#fen);
+    }
 
-        },
-        get type() {
-            return pieceNotation;
-        },
-        set type(t: PieceNotation) {
-            if (t) {
-                EL.textContent = t;
-            }
-            else {
-                EL.textContent = '';
-            }
-            pieceNotation = t;
-            this.el.className = `piece ${this.color}`;
-            // Add and remove different capabilities here maybe
-
+    loadFen(fen: string) {
+        const fenReader = new FenReader(fen);
+        this.#fen = fen;
+        for (const [coordinate, div] of Object.entries(this.board.squares)) {
+            const piece = fenReader.getPieceByCoordinate(coordinate as Coordinate);
+            div.replaceChildren(piece ? this.#buildPiece(piece) : '');
         }
+        return fenReader;
+    }
 
-    };
+    newGame() {
+        return this.loadFen(FenReader.startingFen);
+    }
 
-    PIECE.type = pieceNotation;
+    #buildPiece(pieceNotation: PieceNotation) {
 
-    return PIECE;
+        const div = document.createElement('div');
+        div.textContent = this.#pieceSymbols[pieceNotation];
+        div.dataset.piece = pieceNotation;
+        div.className = `piece ${pieceNotation.toUpperCase() === pieceNotation ? 'w' : 'b'}`;
+        let isMoving = false;
+        let offsetX = 0;
+        let offsetY = 0;
 
-};
+        // Emits events somewhere
+
+        const handleDown = (e: PointerEvent) => {
+            if (!div.parentElement?.classList.contains('square')) return;
+            isMoving = true;
+            div.style.position = 'absolute';
+            offsetX = div.getBoundingClientRect().width / 2;
+            offsetY = div.getBoundingClientRect().height / 2;
+            const left = e.clientX - offsetX;
+            const top = e.clientY - offsetY;
+            div.style.left = `${left}px`;
+            div.style.top = `${top}px`;
+            window.addEventListener('pointermove', handleMove);
+            window.addEventListener('pointerup', handleUp, { once: true });
+        };
+        const handleMove = (e: PointerEvent) => {
+            const left = e.clientX - offsetX;
+            const top = e.clientY - offsetY;
+            div.style.left = `${left}px`;
+            div.style.top = `${top}px`;
+        };
+        const handleUp = (e: PointerEvent) => {
+
+            div.removeAttribute('style');
+            window.removeEventListener('pointermove', handleMove);
+            isMoving = false;
+
+            const hoveredSquare = document.elementsFromPoint(e.clientX, e.clientY)
+                .find(el => el instanceof HTMLDivElement && el.classList.contains('square') && this.board.contains(el));
+
+            if (hoveredSquare) {
+                div.dispatchEvent(new CustomEvent('request-move', {
+                    detail: {
+                        fromSquare: div.parentElement,
+                        toSquare: hoveredSquare,
+                    },
+                    bubbles: true,
+                }));
+            }
+
+        };
+
+        div.addEventListener('pointerdown', handleDown);
+        return div;
+
+    }
+
+    #diffBoard() {
+
+    }
+
+}
 
 
-class Board extends HTMLElement {
-
+class ChessBoard extends HTMLElement {
 
     #initialized = false;
     squares: Record<string, HTMLDivElement> = {};
@@ -98,112 +118,43 @@ class Board extends HTMLElement {
 
     connectedCallback() {
         if (this.#initialized) return;
-        this.#initialized = true;
         this.className = 'board';
+        let dark = false;
         for (const rank of [8, 7, 6, 5, 4, 3, 2, 1]) {
             for (const file of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
                 const square = document.createElement('div');
                 square.className = 'square';
+                if (dark) square.classList.add('dark');
                 square.dataset.coordinate = `${file}${rank}`;
                 this.squares[`${file}${rank}`] = square;
                 this.append(square);
+                dark = !dark;
             }
+            dark = !dark;
         }
+        this.addEventListener('request-move', (e) => {
+            const { fromSquare, toSquare } = (e as CustomEvent).detail;
+        });
+        this.#initialized = true;
     }
-
-    loadFen(fen: string) {
-        const fenReader = new FenReader(fen);
-        console.log(fenReader);
-        for (const [coordinate, div] of Object.entries(this.squares)) {
-
-            const piece = fenReader.getPieceByCoordinate(coordinate as Coordinate);
-            console.log(piece)
-            if (!piece) continue;
-            div.replaceChildren(buildPiece(piece).el);
-        }
-    }
-
 
 }
 
 
-customElements.define('chess-board', Board);
+customElements.define('chess-board', ChessBoard);
 
 
-
-
-
-// What is the difference between game and board? Which methods belong to the board?
-// const startingFen: Fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-// const game = () => {
-
-//     const BOARD = buildBoard();
-
-//     // Castling state
-//     let hasWhiteKingMoved = false;
-//     let hasBlackKingMoved = false;
-//     let hasa1Moved = false;
-//     let hash1Moved = false;
-//     let hasa8Moved = false;
-//     let hash8Moved = false;
-
-
-//     const loadFen = (fen: Fen) => {
-//         // Castling state would have to be reset
-
-//         //const [piecePositions, activeColor, castlingRights, enPassantTarget, halfMoveClock, fullMoveNumber] = fen.split(' ');
-
-//         const { getPieceNotationFromFenByCoordinate } = interpretFen(fen);
-//         const files: TFile[] = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-//         const ranks: TRank[] = [8, 7, 6, 5, 4, 3, 2, 1];
-//         for (const rank of ranks) {
-//             for (const file of files) {
-//                 const existingPiece = BOARD.getPieceByCoordinate(`${file}${rank}`);
-//                 if (existingPiece) {
-//                     BOARD.removePieceAtCoordinate(`${file}${rank}`);
-//                 }
-//                 const newPieceNotation = getPieceNotationFromFenByCoordinate(file, rank);
-//                 if (!newPieceNotation) continue;
-//                 const newPiece = buildPiece(newPieceNotation);
-//                 BOARD.placePieceAtCoordinate(newPiece, `${file}${rank}`);
-//             }
-//         }
-//     };
-
-//     loadFen(startingFen);
-
-//     const object = {
-//         BOARD,
-//         loadFen,
-//         get element() {
-//             return this.BOARD.el;
-//         },
-//         // get notation / clock () { etc - These belong to the game and not the board
-
-//         // }
-//     }
-
-//     return object;
-// };
-
-
-// Board and game are indistinguishable right now, but they shouldn't be when I'm done
-// const g = game();
-// document.body.append(g.element);
-
-
-const x = document.createElement('chess-board');
-document.body.replaceChildren(x);
+const x = new ChessGame();
+document.body.replaceChildren(x.board);
 
 class FenReader {
 
     // Class instances of FenReader are designed to be immutable. 
-    // So we just parse it and figure out what every square contains.
-    // Use this to calculate move legality.
-    // So calculating every piece type in here is actually most appropriate, rather than each piece calculating itself
+    // We parse the string and derive game state, move legality, etc.
 
     static startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
     #fen: string;
+
     #threeFoldRepetition: Record<string, number> = {}; // Does this belong in game, etc? Prob
 
     constructor(fen: string = FenReader.startingFen) {
@@ -268,7 +219,7 @@ class FenReader {
         return this.activeColor === 'w' ? 'b' : 'w';
     }
 
-    get coordinates(): Record<Coordinate, PieceNotation | null> {
+    get coordinateObject(): Record<Coordinate, PieceNotation | null> {
         const result = {} as Record<Coordinate, PieceNotation | null>;
         for (const file of 'abcdefgh') {
             for (const rank of '12345678') {
@@ -281,24 +232,15 @@ class FenReader {
 
     getPieceByCoordinate(c: Coordinate): PieceNotation | null {
         const file = c[0];
-        const toFileIndex = 'abcdefgh'.indexOf(file);
+        const fileIndex = 'abcdefgh'.indexOf(file);
         const rank = c[1];
         // Last rank first so we subtract
         const rankString = this.piecePlacement.split('/')[8 - Number(rank)];
-        if (rankString === '8') {
-            // Completely empty, return immediately
-            return null;
-        }
-        let currentTarget: string | null = null;
-        let counter = 0;
-        // Iterate through the rank string and either grab the correct piece or skip over squares
-        while (counter < 8) {
-            currentTarget = rankString[counter];
-            if (counter === toFileIndex) break;
-            const isNumberOfEmptySquares = Number.isInteger(Number(currentTarget));
-            counter += isNumberOfEmptySquares ? Number(currentTarget) : 1;
-        }
-        return currentTarget as PieceNotation | null;
+        if (rankString === '8') return null;
+        const expandedRank = this.#expandRank(rankString);
+        const result = expandedRank[fileIndex];
+        if (result === '0') return null
+        return result as PieceNotation;
     }
 
     /** Determines which color */
@@ -393,18 +335,11 @@ class FenReader {
 
         if (!isCandidateMove) return null;
 
-
-        // Do it HERE to simplify
-        // Determine if it goes into check
-        // Determine if it blocks check
-        // if (this.doesThisMoveGoIntoCheck()) {
-        // Without changing active color, set up that position and see if we're in check?
-        //     return null;
-        // }
-        // if (this.isCheck) {
-        //     const result = this.doesThisMoveRemoveCheck(from, to);
-        //     if (!result) return null;
-        // }
+        if (this.detectCheck(from, to)) {
+            // Move could be possible but put the player into check.
+            // Or the player is currently in check and the move doesn't help
+            return null;
+        }
 
         // method that alters fen string, returns new one, does not modify this. getNewFen
         return new FenReader(FenReader.startingFen);
@@ -511,11 +446,10 @@ class FenReader {
         return new Set();
     }
 
-
     getIsSquareAttacked(c: Coordinate, attacker: 'w' | 'b' = this.inactiveColor) {
         // Go through every piece and check if it can hit a square
         let isAttacked = false;
-        for (const piece of Object.values(this.coordinates)) {
+        for (const piece of Object.values(this.coordinateObject)) {
             if (!piece) continue;
             const isWhite = piece.toUpperCase() === piece;
             if ((attacker === 'b' && isWhite)) continue;
@@ -549,15 +483,19 @@ class FenReader {
         return isAttacked;
     }
 
+    /** Get a new FenReader without changing moves and see if check is there.
+     *  Use this to see if you are getting out of or moving into check before moving */
     detectCheck(from: Coordinate, to: Coordinate): boolean {
         const fenReader = this.generateNewFenReaderFromMove(from, to, false);
         return fenReader.isCheck;
     }
 
+    /** Gets a new FenReader. Doesn't test move legality. We can opt to not change turns to test moves */
     generateNewFenReaderFromMove(from: Coordinate, to: Coordinate, changeTurns = true): FenReader {
         let [piecePlacement, activeColor, castlingRights, enPassantTarget, halfMoveClock, fullMoveNumber] = this.fen.split(' ');
 
         const movingPiece = this.getPieceByCoordinate(from);
+
         if (!movingPiece) throw new Error('no piece?');
         const fromFile = from[0];
         const fromRank = from[1];
@@ -565,12 +503,16 @@ class FenReader {
         const toRank = to[1];
         const fromFileIndex = 'abcdefgh'.indexOf(fromFile);
         const toFileIndex = 'abcdefgh'.indexOf(toFile);
+        // Reset if we moved a pawn or if we land on a piece.
+        const shouldReset50MoveClock = movingPiece.toLowerCase() === 'p' || !!this.getPieceByCoordinate(to);
 
-        const isWhiteCastleKingside = from === 'e1' && to === 'g1';
-        const isWhiteCastleQueenside = from === 'e1' && to === 'c1';
-        const isBlackCastleKingside = from === 'e8' && to === 'g1';
-        const isBlackCastleQueenside = from === 'e8' && to === 'c8';
-        const isEnPassant = to === enPassantTarget; // and is correct pawn move
+        const isWhiteCastleKingside = movingPiece === 'K' && from === 'e1' && to === 'g1';
+        const isWhiteCastleQueenside = movingPiece === 'K' && from === 'e1' && to === 'c1';
+        const isBlackCastleKingside = movingPiece === 'k' && from === 'e8' && to === 'g1';
+        const isBlackCastleQueenside = movingPiece === 'k' && from === 'e8' && to === 'c8';
+        const isEnPassant =
+            (this.activeColor === 'w' && movingPiece === 'P' && to === enPassantTarget) ||
+            (this.activeColor === 'b' && movingPiece === 'p' && to === enPassantTarget);
 
         if (isWhiteCastleKingside || from === 'e1' || from === 'h1' || to === 'h1') castlingRights = castlingRights.replace('K', '');
         if (isBlackCastleKingside || from === 'e8' || from === 'h8' || to === 'h8') castlingRights = castlingRights.replace('k', '');
@@ -590,54 +532,26 @@ class FenReader {
 
         if (changeTurns) {
             activeColor = activeColor === 'w' ? 'b' : 'w';
-            halfMoveClock = String(Number(halfMoveClock) + 1);
+            halfMoveClock = shouldReset50MoveClock ? '0' : String(Number(halfMoveClock) + 1);
             if (this.activeColor === 'b') fullMoveNumber = String(Number(fullMoveNumber + 1));
         }
 
         // Modify the fen string
         const ranks = piecePlacement.split('/');
-        const expandRank = (rank: string) => {
-            let expandedString = '';
-            for (const char of rank) {
-                if (Number.isNaN(Number(char))) {
-                    expandedString += char;
-                    continue;
-                }
-                expandedString += Array.from({ length: Number(char) }, () => '0').join('');
-            }
-            const arr = expandedString.split('');
-            return arr;
-        };
-        const compressRank = (rank: string[]) => {
-            let resultString = '';
-            let count = 0;
-            for (const char of rank) {
-                if (char === '0') {
-                    count++;
-                    continue;
-                }
-                if (count) resultString += String(count);
-                resultString += char;
-                count = 0;
-            }
-            if (count) resultString += String(count);
-            return resultString;
-        };
-
 
         if (fromRank === toRank) {
-            const rankArray = expandRank(ranks[8 - Number(toRank)]);
+            const rankArray = this.#expandRank(ranks[8 - Number(toRank)]);
             rankArray[fromFileIndex] = '0';
             rankArray[toFileIndex] = movingPiece;
-            ranks.splice(8 - Number(fromRank), 1, compressRank(rankArray));
+            ranks.splice(8 - Number(fromRank), 1, this.#compressRank(rankArray));
         }
         else {
-            const fromRankArr = expandRank(ranks[8 - Number(fromRank)]);
-            const toRankArr = expandRank(ranks[8 - Number(toRank)]);
+            const fromRankArr = this.#expandRank(ranks[8 - Number(fromRank)]);
+            const toRankArr = this.#expandRank(ranks[8 - Number(toRank)]);
             fromRankArr[fromFileIndex] = '0';
             toRankArr[fromFileIndex] = movingPiece;
-            ranks.splice(8 - Number(fromRank), 1, compressRank(fromRankArr));
-            ranks.splice(8 - Number(toRank), 1, compressRank(toRankArr));
+            ranks.splice(8 - Number(fromRank), 1, this.#compressRank(fromRankArr));
+            ranks.splice(8 - Number(toRank), 1, this.#compressRank(toRankArr));
         }
 
         // Exceptions
@@ -653,7 +567,7 @@ class FenReader {
         else if (isBlackCastleQueenside) {
 
         }
-        if (isEnPassant) {
+        else if (isEnPassant) {
             // Remove a piece on a different square
             // It's going to be the pawn in front of enpassanttarget (which has been mutated already here)
         }
@@ -661,6 +575,36 @@ class FenReader {
         const newPiecePlacement = ranks.join('/');
         const fen = `${newPiecePlacement} ${activeColor} ${castlingRights} ${enPassantTarget} ${halfMoveClock} ${fullMoveNumber}`;
         return new FenReader(fen);
+    }
+
+    /** Takes a fen rank string and normalizes it to 8 character array (adds zeros in place of numbers) */
+    #expandRank(rank: string) {
+        let expandedString = '';
+        for (const char of rank) {
+            if (Number.isNaN(Number(char))) {
+                expandedString += char;
+                continue;
+            }
+            expandedString += Array.from({ length: Number(char) }, () => '0').join('');
+        }
+        const arr = expandedString.split('');
+        return arr;
+    }
+
+    #compressRank(expandedRankArray: string[]) {
+        let rankString = '';
+        let count = 0;
+        for (const char of expandedRankArray) {
+            if (char === '0') {
+                count++;
+                continue;
+            }
+            if (count) rankString += String(count);
+            rankString += char;
+            count = 0;
+        }
+        if (count) rankString += String(count);
+        return rankString;
     }
 
 }
