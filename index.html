@@ -19,40 +19,32 @@
             background-color: antiquewhite;
         }
 
-        .board {
+        chess-board {
             width: fit-content;
+            height: min-content;
             display: grid;
             grid-template-columns: repeat(8, 1fr);
             gap: 0px;
         }
 
-        .board[data-to-move="white"] .piece.white {
-            cursor: pointer;
-        }
-
-        .board[data-to-move="black"] .piece.black {
-            cursor: pointer;
-        }
-
-        .piece {
+        .p {
             font-size: 3.7em;
             user-select: none;
-
         }
 
-        .piece.w {
+        .p.w {
             color: white;
         }
 
-        .piece.b {
+        .p.b {
             color: black
         }
 
-        .piece::selection {
+        .p::selection {
             background-color: transparent;
         }
 
-        .square {
+        chess-board>div {
             display: grid;
             place-items: center;
             height: var(--sq);
@@ -60,23 +52,23 @@
             background-color: #9f90b0;
         }
 
-        .square.dark {
+        chess-board>div.d {
             background-color: #7d4a8d;
-        }
+        } 
 
-        .square.legal {
+        chess-board>div.legal {
             box-shadow: inset 0 0 0 .3rem goldenrod;
         }
 
-        .square.active {
+        chess-board>div.active {
             box-shadow: inset 0 0 0 .3rem hsla(120, 100%, 12.5%, 1);
         }
 
-        .square.check {
+        chess-board>div.check {
             box-shadow: inset 0 0 0 .3rem red;
         }
 
-        .square.checkmate {
+        chess-board>div.checkmate {
             background-color: red;
         }
     </style>

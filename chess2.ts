@@ -2,10 +2,11 @@ type Coordinate = `${'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h'}${1 | 2 | 3 |
 type Direction = 'up' | 'upright' | 'right' | 'downright' | 'down' | 'downleft' | 'left' | 'upleft';
 type PieceNotation = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p';
 
-class ChessGame {
+class ChessBoard extends HTMLElement {
 
-    board = new ChessBoard();
-    #fen = '';
+    #isInitialized = false;
+    #squaresObj: Record<string, HTMLDivElement> = {};
+    #squaresMap: Map<HTMLDivElement, Coordinate> = new Map();
     #pieceSymbols = {
         k: '♚',
         q: '♛',
@@ -20,132 +21,199 @@ class ChessGame {
         N: '♘',
         P: '♙',
     };
+    #threeFoldRepetitionCounter: Record<string, number> = {};
+    #fenArray: string[] = []; // Game history
+    #currentFenIndex = -1;
 
+    constructor() {
+        super();
+    }
+
+    connectedCallback() {
+        if (this.#isInitialized) return;
+        this.draggable = false;
+        let dark = false;
+        for (const rank of [8, 7, 6, 5, 4, 3, 2, 1]) {
+            for (const file of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+                const square = document.createElement('div');
+                square.draggable = false;
+                if (dark) square.classList.add('d');
+                this.#squaresObj[`${file}${rank}`] = square;
+                this.#squaresMap.set(square, `${file}${rank}` as Coordinate);
+                this.append(square);
+                dark = !dark;
+            }
+            dark = !dark;
+        }
+
+        this.addEventListener('request-move', (e) => this.#listen(e));
+
+        this.#isInitialized = true;
+    }
+
+    #listen(e: Event) {
+        const { fromSquare, toSquare } = (e as CustomEvent).detail;
+        if (!fromSquare || !toSquare) return;
+        if (fromSquare === toSquare) return;
+        const from = this.#squaresMap.get(fromSquare);
+        const to = this.#squaresMap.get(toSquare);
+        if (!from || !to) return;
+        const fenReader = new FenReader(this.fen);
+        const result = fenReader.requestMove(from, to);
+        if (result === null) return; // Illegal move
+        console.log(from, to);
+        this.#diffAndUpdate(result);
+        this.#commitNewMove(result);
+    };
 
     get fen() {
-        return this.#fen;
+        return this.#fenArray.at(-1) || '';
     }
 
     get fenReader() {
-        return new FenReader(this.#fen);
+        return new FenReader(this.fen);
     }
 
+    /** Removes current game */
     loadFen(fen: string) {
+        this.#fenArray.length = 0;
+        this.#currentFenIndex = -1;
         const fenReader = new FenReader(fen);
-        this.#fen = fen;
-        for (const [coordinate, div] of Object.entries(this.board.squares)) {
-            const piece = fenReader.getPieceByCoordinate(coordinate as Coordinate);
-            div.replaceChildren(piece ? this.#buildPiece(piece) : '');
-        }
-        return fenReader;
+        this.#diffAndUpdate(fenReader);
+        this.#commitNewMove(fenReader);
     }
 
     newGame() {
-        return this.loadFen(FenReader.startingFen);
+        this.loadFen(FenReader.startingFen);
     }
 
+    /** Piece factory function. We don't care about keeping pieces in state */
     #buildPiece(pieceNotation: PieceNotation) {
-
-        const div = document.createElement('div');
-        div.textContent = this.#pieceSymbols[pieceNotation];
-        div.dataset.piece = pieceNotation;
-        div.className = `piece ${pieceNotation.toUpperCase() === pieceNotation ? 'w' : 'b'}`;
-        let isMoving = false;
+        const pieceDiv = document.createElement('div');
+        pieceDiv.draggable = false;
+        pieceDiv.textContent = this.#pieceSymbols[pieceNotation];
+        pieceDiv.className = `p ${pieceNotation.toUpperCase() === pieceNotation ? 'w' : 'b'}`;
         let offsetX = 0;
         let offsetY = 0;
 
-        // Emits events somewhere
-
         const handleDown = (e: PointerEvent) => {
-            if (!div.parentElement?.classList.contains('square')) return;
-            isMoving = true;
-            div.style.position = 'absolute';
-            offsetX = div.getBoundingClientRect().width / 2;
-            offsetY = div.getBoundingClientRect().height / 2;
+            if (!this.#squaresMap.has(pieceDiv.parentElement as HTMLDivElement)) return;
+            //isMoving = true;
+            pieceDiv.style.position = 'absolute';
+            offsetX = pieceDiv.getBoundingClientRect().width / 2;
+            offsetY = pieceDiv.getBoundingClientRect().height / 2;
             const left = e.clientX - offsetX;
             const top = e.clientY - offsetY;
-            div.style.left = `${left}px`;
-            div.style.top = `${top}px`;
+            pieceDiv.style.left = `${left}px`;
+            pieceDiv.style.top = `${top}px`;
             window.addEventListener('pointermove', handleMove);
             window.addEventListener('pointerup', handleUp, { once: true });
         };
         const handleMove = (e: PointerEvent) => {
             const left = e.clientX - offsetX;
             const top = e.clientY - offsetY;
-            div.style.left = `${left}px`;
-            div.style.top = `${top}px`;
+            pieceDiv.style.left = `${left}px`;
+            pieceDiv.style.top = `${top}px`;
         };
         const handleUp = (e: PointerEvent) => {
-
-            div.removeAttribute('style');
+            pieceDiv.removeAttribute('style');
             window.removeEventListener('pointermove', handleMove);
-            isMoving = false;
 
             const hoveredSquare = document.elementsFromPoint(e.clientX, e.clientY)
-                .find(el => el instanceof HTMLDivElement && el.classList.contains('square') && this.board.contains(el));
-
-            if (hoveredSquare) {
-                div.dispatchEvent(new CustomEvent('request-move', {
-                    detail: {
-                        fromSquare: div.parentElement,
-                        toSquare: hoveredSquare,
-                    },
-                    bubbles: true,
-                }));
-            }
-
+                .find(el => el instanceof HTMLDivElement && this.#squaresMap.has(el));
+            if (!hoveredSquare) return;
+            pieceDiv.dispatchEvent(new CustomEvent('request-move', {
+                detail: {
+                    fromSquare: pieceDiv.parentElement,
+                    toSquare: hoveredSquare,
+                },
+                bubbles: true,
+            }));
         };
-
-        div.addEventListener('pointerdown', handleDown);
-        return div;
-
+        div.addEventListener('dragstart', (e) => e.preventDefault());
+        div.addEventListener('mousedown', (e) => e.preventDefault());
+        pieceDiv.addEventListener('pointerdown', handleDown);
+        return pieceDiv;
     }
 
-    #diffBoard() {
-
-    }
-
-}
-
-
-class ChessBoard extends HTMLElement {
-
-    #initialized = false;
-    squares: Record<string, HTMLDivElement> = {};
-    constructor() {
-        super();
-    }
-
-    connectedCallback() {
-        if (this.#initialized) return;
-        this.className = 'board';
-        let dark = false;
-        for (const rank of [8, 7, 6, 5, 4, 3, 2, 1]) {
-            for (const file of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
-                const square = document.createElement('div');
-                square.className = 'square';
-                if (dark) square.classList.add('dark');
-                square.dataset.coordinate = `${file}${rank}`;
-                this.squares[`${file}${rank}`] = square;
-                this.append(square);
-                dark = !dark;
-            }
-            dark = !dark;
+    #diffAndUpdate(updatedFenReader: FenReader) {
+        for (const key in this.#squaresObj) {
+            const piece = updatedFenReader.getPieceByCoordinate(key as Coordinate);
+            this.#squaresObj[key].replaceChildren(piece ? this.#buildPiece(piece) : '');
         }
-        this.addEventListener('request-move', (e) => {
-            const { fromSquare, toSquare } = (e as CustomEvent).detail;
-        });
-        this.#initialized = true;
+        // const current = this.fenReader.coordinateObject;
+        // const updated = updatedFenReader.coordinateObject;
+        // for (const key in updated) {
+        //     const currentPiece = current[key as Coordinate];
+        //     const updatedPiece = updated[key as Coordinate];
+        //     if (currentPiece === updatedPiece) continue;
+        //     console.log(currentPiece, updatedPiece);
+        //     // remove the old div and create a new one if necessary
+        //     this.#squaresObj[key].replaceChildren(updatedPiece ? this.#buildPiece(updatedPiece) : '');
+        // }
+    }
+
+    #commitNewMove(updatedFenReader: FenReader) {
+        const fen = updatedFenReader.fen;
+        this.#fenArray.push(fen);
+        // This doesn't work because the whole fen will always be different.
+        // Need to split out the relevant piece
+
+        const halfMoveClock = updatedFenReader.halfMoveClock;
+        if (Number(halfMoveClock) >= 50) {
+            // Draw
+        }
+
+        const piecePlacement = updatedFenReader.piecePlacement;
+        if (!this.#threeFoldRepetitionCounter[piecePlacement]) this.#threeFoldRepetitionCounter[piecePlacement] = 0;
+        this.#threeFoldRepetitionCounter[piecePlacement]++;
+        if (this.#threeFoldRepetitionCounter[piecePlacement] >= 3) {
+            // Draw
+        }
+    }
+
+    // #checkForDraws() {
+    //     const piecePlacement = this.fenReader.piecePlacement;
+    // }
+
+    goToPly(newFenIndex: number) {
+        const newFen = this.#fenArray.at(newFenIndex);
+        if (!newFen) return;
+        this.#diffAndUpdate(new FenReader(newFen));
+        this.#currentFenIndex = newFenIndex;
+    }
+
+    forward() {
+        this.goToPly(this.#currentFenIndex + 1);
+    }
+
+    back() {
+        this.goToPly(this.#currentFenIndex - 1);
+    }
+
+    goToCurrentPly() {
+        this.goToPly(this.#fenArray.length - 1);
     }
 
 }
-
 
 customElements.define('chess-board', ChessBoard);
-
-
-const x = new ChessGame();
-document.body.replaceChildren(x.board);
+const x = new ChessBoard();
+document.body.replaceChildren(x);
+const div = document.createElement('div');
+div.style.display = 'flex';
+div.style.gap = '2em';
+const button = document.createElement('button');
+button.textContent = 'New Game';
+button.onclick = () => x.newGame();
+const input = document.createElement('input');
+input.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') {
+        x.loadFen(input.value);
+    }
+})
+div.replaceChildren(button, input);
+document.body.append(div);
 
 class FenReader {
 
@@ -154,8 +222,6 @@ class FenReader {
 
     static startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
     #fen: string;
-
-    #threeFoldRepetition: Record<string, number> = {}; // Does this belong in game, etc? Prob
 
     constructor(fen: string = FenReader.startingFen) {
         this.#fen = fen;
@@ -231,19 +297,24 @@ class FenReader {
     }
 
     getPieceByCoordinate(c: Coordinate): PieceNotation | null {
+        if (!c) return null;
         const file = c[0];
+        if (!file) return null;
         const fileIndex = 'abcdefgh'.indexOf(file);
+        if (fileIndex < 0) return null;
         const rank = c[1];
+        if (!rank) return null;
         // Last rank first so we subtract
         const rankString = this.piecePlacement.split('/')[8 - Number(rank)];
-        if (rankString === '8') return null;
+        if (!rankString) return null;
+        if (rankString === '8') return null; // Empty rank
         const expandedRank = this.#expandRank(rankString);
         const result = expandedRank[fileIndex];
-        if (result === '0') return null
+        if (result === '0' || !result) return null;
         return result as PieceNotation;
     }
 
-    /** Determines which color */
+    /** Determines which color is at a square (or returns null) */
     getPieceColorAtCoordinate(c: Coordinate): 'w' | 'b' | null {
         const piece = this.getPieceByCoordinate(c);
         if (!piece) return null;
@@ -258,8 +329,8 @@ class FenReader {
         if (this.isCheck) return false;
         if (this.getPieceByCoordinate('f1')) return false;
         if (this.getPieceByCoordinate('g1')) return false;
-        if (this.getIsSquareAttacked('f1', 'b')) return false;
-        if (this.getIsSquareAttacked('g1', 'b')) return false;
+        if (this.#getIsSquareAttacked('f1', 'b')) return false;
+        if (this.#getIsSquareAttacked('g1', 'b')) return false;
         return true;
     }
     get whiteCanCastleQueenside() {
@@ -271,9 +342,9 @@ class FenReader {
         if (this.getPieceByCoordinate('d1')) return false;
         if (this.getPieceByCoordinate('c1')) return false;
         if (this.getPieceByCoordinate('b1')) return false;
-        if (this.getIsSquareAttacked('d1', 'b')) return false;
-        if (this.getIsSquareAttacked('c1', 'b')) return false;
-        if (this.getIsSquareAttacked('b1', 'b')) return false;
+        if (this.#getIsSquareAttacked('d1', 'b')) return false;
+        if (this.#getIsSquareAttacked('c1', 'b')) return false;
+        if (this.#getIsSquareAttacked('b1', 'b')) return false;
         return true;
     }
     get blackCanCastleKingside() {
@@ -284,8 +355,8 @@ class FenReader {
         if (this.isCheck) return false;
         if (this.getPieceByCoordinate('f8')) return false;
         if (this.getPieceByCoordinate('g8')) return false;
-        if (this.getIsSquareAttacked('f8', 'w')) return false;
-        if (this.getIsSquareAttacked('g8', 'w')) return false;
+        if (this.#getIsSquareAttacked('f8', 'w')) return false;
+        if (this.#getIsSquareAttacked('g8', 'w')) return false;
         return true;
     }
     get blackCanCastleQueenside() {
@@ -297,14 +368,15 @@ class FenReader {
         if (this.getPieceByCoordinate('d8')) return false;
         if (this.getPieceByCoordinate('c8')) return false;
         if (this.getPieceByCoordinate('b8')) return false;
-        if (this.getIsSquareAttacked('d8', 'w')) return false;
-        if (this.getIsSquareAttacked('c8', 'w')) return false;
-        if (this.getIsSquareAttacked('b8', 'w')) return false;
+        if (this.#getIsSquareAttacked('d8', 'w')) return false;
+        if (this.#getIsSquareAttacked('c8', 'w')) return false;
+        if (this.#getIsSquareAttacked('b8', 'w')) return false;
         return true;
     }
 
     /**  On every move we just create a new instance. Immutable structure. Return null if move is illegal */
-    move(from: Coordinate, to: Coordinate): FenReader | null {
+    requestMove(from: Coordinate, to: Coordinate): FenReader | null {
+        if (from === to) return null; // Not a move
         const piece = this.getPieceByCoordinate(from);
         const activeColor = this.activeColor;
         if (!piece) return null;
@@ -315,34 +387,36 @@ class FenReader {
         const p = piece.toLowerCase();
         let isCandidateMove = false;
         if (p === 'k') {
-            isCandidateMove = this.getKingMoves(from).has(to);
+            isCandidateMove = this.#getKingMoves(from).has(to);
         }
         else if (p === 'q') {
-            isCandidateMove = this.getQueenMoves(from).has(to);
+            isCandidateMove = this.#getQueenMoves(from).has(to);
         }
         else if (p === 'r') {
-            isCandidateMove = this.getRookMoves(from).has(to);
+            isCandidateMove = this.#getRookMoves(from).has(to);
         }
         else if (p === 'b') {
-            isCandidateMove = this.getBishopMoves(from).has(to);
+            console.log(this.#getBishopMoves(from));
+            isCandidateMove = this.#getBishopMoves(from).has(to);
         }
         else if (p === 'n') {
 
         }
         else if (p === 'p') {
-
+            isCandidateMove = this.#getPawnMoves(from).has(to);
         }
 
         if (!isCandidateMove) return null;
 
-        if (this.detectCheck(from, to)) {
-            // Move could be possible but put the player into check.
-            // Or the player is currently in check and the move doesn't help
+        if (this.#detectCheck(from, to)) {
+            // Move could be possible but puts the player in check,
+            // or the player is currently in check and the move doesn't get out.
+            // So we return null
             return null;
         }
 
-        // method that alters fen string, returns new one, does not modify this. getNewFen
-        return new FenReader(FenReader.startingFen);
+        // The move is legal. Return a new instance
+        return this.#generateNewFenReaderFromMove(from, to);
     }
 
 
@@ -404,22 +478,21 @@ class FenReader {
         return result;
     }
 
-
     // In the following piece-specific methods, we ignore checks completely and assume we are not in check.
     // We handle that afterward in the "move" method. All these methods will be made #private
     // I am allowing the color to be toggled so that we can use these to see attacked squares as well
 
-    getKingMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+    #getKingMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
         return new Set();
     }
 
-    getQueenMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
-        const rookMoves = this.getRookMoves(startCoordinate, color);
-        const bishopMoves = this.getBishopMoves(startCoordinate, color);
+    #getQueenMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+        const rookMoves = this.#getRookMoves(startCoordinate, color);
+        const bishopMoves = this.#getBishopMoves(startCoordinate, color);
         return new Set([...rookMoves, ...bishopMoves]);
     }
 
-    getRookMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+    #getRookMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
         return new Set([
             ...this.#getRayMoves(startCoordinate, 'up', color),
             ...this.#getRayMoves(startCoordinate, 'down', color),
@@ -428,7 +501,7 @@ class FenReader {
         ]);
     }
 
-    getBishopMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+    #getBishopMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
         return new Set([
             ...this.#getRayMoves(startCoordinate, 'upright', color),
             ...this.#getRayMoves(startCoordinate, 'downright', color),
@@ -437,16 +510,38 @@ class FenReader {
         ]);
     }
 
-    getKnightMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+    #getKnightMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
         return new Set();
     }
 
-    getPawnMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+    #getPawnMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+        const result: Set<Coordinate> = new Set();
+        const hasNotMoved = (startCoordinate[1] === '2' && color === 'w') || (startCoordinate[1] === '7' && color === 'b');
+        const oppositeColor = color === 'w' ? 'b' : 'w';
+
+        const squareInFront = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'up' : 'down');
+        const pieceInFront = squareInFront && this.getPieceByCoordinate(squareInFront);
+        if (squareInFront && !pieceInFront) result.add(squareInFront);
+
+        const squareUpRight = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upright' : 'downleft');
+        if (squareUpRight && this.getPieceColorAtCoordinate(squareUpRight) === oppositeColor) result.add(squareUpRight);
+        const squareUpLeft = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upleft' : 'downright');
+        if (squareUpLeft && this.getPieceColorAtCoordinate(squareUpLeft) === oppositeColor) result.add(squareUpLeft);
+
+        // Double jump
+        if (hasNotMoved && squareInFront && !pieceInFront) {
+            const twoInFront = this.#getAdjacentCoordinate(squareInFront, color === 'w' ? 'up' : 'down');
+            if (twoInFront && !this.getPieceByCoordinate(twoInFront)) result.add(twoInFront);
+        }
+
         const enPassantSquare = this.enPassantTarget;
-        return new Set();
+        if (enPassantSquare === squareUpRight || enPassantSquare === squareUpLeft) {
+            result.add(enPassantSquare);
+        }
+        console.log(result);
+        return result;
     }
-
-    getIsSquareAttacked(c: Coordinate, attacker: 'w' | 'b' = this.inactiveColor) {
+    #getIsSquareAttacked(c: Coordinate, attacker: 'w' | 'b' = this.inactiveColor) {
         // Go through every piece and check if it can hit a square
         let isAttacked = false;
         for (const piece of Object.values(this.coordinateObject)) {
@@ -456,27 +551,27 @@ class FenReader {
             if (attacker === 'w' && !isWhite) continue;
             const p = piece.toLowerCase();
             if (p === 'k') {
-                if (this.getKingMoves(c, attacker).has(c)) isAttacked = true;
+                if (this.#getKingMoves(c, attacker).has(c)) isAttacked = true;
                 break;
             }
             if (p === 'q') {
-                if (this.getQueenMoves(c, attacker).has(c)) isAttacked = true;
+                if (this.#getQueenMoves(c, attacker).has(c)) isAttacked = true;
                 break;
             }
             if (p === 'r') {
-                if (this.getRookMoves(c, attacker).has(c)) isAttacked = true;
+                if (this.#getRookMoves(c, attacker).has(c)) isAttacked = true;
                 break;
             }
             if (p === 'b') {
-                if (this.getBishopMoves(c, attacker).has(c)) isAttacked = true;
+                if (this.#getBishopMoves(c, attacker).has(c)) isAttacked = true;
                 break;
             }
             if (p === 'n') {
-                if (this.getKnightMoves(c, attacker).has(c)) isAttacked = true;
+                if (this.#getKnightMoves(c, attacker).has(c)) isAttacked = true;
                 break;
             }
             if (p === 'p') {
-                if (this.getPawnMoves(c, attacker).has(c)) isAttacked = true;
+                if (this.#getPawnMoves(c, attacker).has(c)) isAttacked = true;
                 break;
             }
         }
@@ -485,13 +580,14 @@ class FenReader {
 
     /** Get a new FenReader without changing moves and see if check is there.
      *  Use this to see if you are getting out of or moving into check before moving */
-    detectCheck(from: Coordinate, to: Coordinate): boolean {
-        const fenReader = this.generateNewFenReaderFromMove(from, to, false);
-        return fenReader.isCheck;
+    #detectCheck(from: Coordinate, to: Coordinate): boolean {
+        const testFenReader = this.#generateNewFenReaderFromMove(from, to, false);
+        return testFenReader.isCheck;
     }
 
-    /** Gets a new FenReader. Doesn't test move legality. We can opt to not change turns to test moves */
-    generateNewFenReaderFromMove(from: Coordinate, to: Coordinate, changeTurns = true): FenReader {
+    /** Gets a new FenReader. Doesn't test move legality. 
+     * We can opt to not change turns to check conditions after the reader is created (checks) */
+    #generateNewFenReaderFromMove(from: Coordinate, to: Coordinate, changeTurns = true): FenReader {
         let [piecePlacement, activeColor, castlingRights, enPassantTarget, halfMoveClock, fullMoveNumber] = this.fen.split(' ');
 
         const movingPiece = this.getPieceByCoordinate(from);
@@ -549,7 +645,7 @@ class FenReader {
             const fromRankArr = this.#expandRank(ranks[8 - Number(fromRank)]);
             const toRankArr = this.#expandRank(ranks[8 - Number(toRank)]);
             fromRankArr[fromFileIndex] = '0';
-            toRankArr[fromFileIndex] = movingPiece;
+            toRankArr[toFileIndex] = movingPiece;
             ranks.splice(8 - Number(fromRank), 1, this.#compressRank(fromRankArr));
             ranks.splice(8 - Number(toRank), 1, this.#compressRank(toRankArr));
         }
@@ -569,7 +665,7 @@ class FenReader {
         }
         else if (isEnPassant) {
             // Remove a piece on a different square
-            // It's going to be the pawn in front of enpassanttarget (which has been mutated already here)
+            // It's going to be the pawn in front of enpassanttarget
         }
 
         const newPiecePlacement = ranks.join('/');
