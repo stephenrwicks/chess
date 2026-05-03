@@ -2,218 +2,7 @@ type Coordinate = `${'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h'}${1 | 2 | 3 |
 type Direction = 'up' | 'upright' | 'right' | 'downright' | 'down' | 'downleft' | 'left' | 'upleft';
 type PieceNotation = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p';
 
-class ChessBoard extends HTMLElement {
 
-    #isInitialized = false;
-    #squaresObj: Record<string, HTMLDivElement> = {};
-    #squaresMap: Map<HTMLDivElement, Coordinate> = new Map();
-    #pieceSymbols = {
-        k: '♚',
-        q: '♛',
-        r: '♜',
-        b: '♝',
-        n: '♞',
-        p: '♟',
-        K: '♔',
-        Q: '♕',
-        R: '♖',
-        B: '♗',
-        N: '♘',
-        P: '♙',
-    };
-    #threeFoldRepetitionCounter: Record<string, number> = {};
-    #fenArray: string[] = []; // Game history
-    #currentFenIndex = -1;
-
-    constructor() {
-        super();
-    }
-
-    connectedCallback() {
-        if (this.#isInitialized) return;
-        this.draggable = false;
-        let dark = false;
-        for (const rank of [8, 7, 6, 5, 4, 3, 2, 1]) {
-            for (const file of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
-                const square = document.createElement('div');
-                square.draggable = false;
-                if (dark) square.classList.add('d');
-                this.#squaresObj[`${file}${rank}`] = square;
-                this.#squaresMap.set(square, `${file}${rank}` as Coordinate);
-                this.append(square);
-                dark = !dark;
-            }
-            dark = !dark;
-        }
-
-        this.addEventListener('request-move', (e) => this.#listen(e));
-
-        this.#isInitialized = true;
-    }
-
-    #listen(e: Event) {
-        const { fromSquare, toSquare } = (e as CustomEvent).detail;
-        if (!fromSquare || !toSquare) return;
-        if (fromSquare === toSquare) return;
-        const from = this.#squaresMap.get(fromSquare);
-        const to = this.#squaresMap.get(toSquare);
-        if (!from || !to) return;
-        const fenReader = new FenReader(this.fen);
-        const result = fenReader.requestMove(from, to);
-        if (result === null) return; // Illegal move
-        console.log(from, to);
-        this.#diffAndUpdate(result);
-        this.#commitNewMove(result);
-    };
-
-    get fen() {
-        return this.#fenArray.at(-1) || '';
-    }
-
-    get fenReader() {
-        return new FenReader(this.fen);
-    }
-
-    /** Removes current game */
-    loadFen(fen: string) {
-        this.#fenArray.length = 0;
-        this.#currentFenIndex = -1;
-        const fenReader = new FenReader(fen);
-        this.#diffAndUpdate(fenReader);
-        this.#commitNewMove(fenReader);
-    }
-
-    newGame() {
-        this.loadFen(FenReader.startingFen);
-    }
-
-    /** Piece factory function. We don't care about keeping pieces in state */
-    #buildPiece(pieceNotation: PieceNotation) {
-        const pieceDiv = document.createElement('div');
-        pieceDiv.draggable = false;
-        pieceDiv.textContent = this.#pieceSymbols[pieceNotation];
-        pieceDiv.className = `p ${pieceNotation.toUpperCase() === pieceNotation ? 'w' : 'b'}`;
-        let offsetX = 0;
-        let offsetY = 0;
-
-        const handleDown = (e: PointerEvent) => {
-            if (!this.#squaresMap.has(pieceDiv.parentElement as HTMLDivElement)) return;
-            //isMoving = true;
-            pieceDiv.style.position = 'absolute';
-            offsetX = pieceDiv.getBoundingClientRect().width / 2;
-            offsetY = pieceDiv.getBoundingClientRect().height / 2;
-            const left = e.clientX - offsetX;
-            const top = e.clientY - offsetY;
-            pieceDiv.style.left = `${left}px`;
-            pieceDiv.style.top = `${top}px`;
-            window.addEventListener('pointermove', handleMove);
-            window.addEventListener('pointerup', handleUp, { once: true });
-        };
-        const handleMove = (e: PointerEvent) => {
-            const left = e.clientX - offsetX;
-            const top = e.clientY - offsetY;
-            pieceDiv.style.left = `${left}px`;
-            pieceDiv.style.top = `${top}px`;
-        };
-        const handleUp = (e: PointerEvent) => {
-            pieceDiv.removeAttribute('style');
-            window.removeEventListener('pointermove', handleMove);
-
-            const hoveredSquare = document.elementsFromPoint(e.clientX, e.clientY)
-                .find(el => el instanceof HTMLDivElement && this.#squaresMap.has(el));
-            if (!hoveredSquare) return;
-            pieceDiv.dispatchEvent(new CustomEvent('request-move', {
-                detail: {
-                    fromSquare: pieceDiv.parentElement,
-                    toSquare: hoveredSquare,
-                },
-                bubbles: true,
-            }));
-        };
-        div.addEventListener('dragstart', (e) => e.preventDefault());
-        div.addEventListener('mousedown', (e) => e.preventDefault());
-        pieceDiv.addEventListener('pointerdown', handleDown);
-        return pieceDiv;
-    }
-
-    #diffAndUpdate(updatedFenReader: FenReader) {
-        for (const key in this.#squaresObj) {
-            const piece = updatedFenReader.getPieceByCoordinate(key as Coordinate);
-            this.#squaresObj[key].replaceChildren(piece ? this.#buildPiece(piece) : '');
-        }
-        // const current = this.fenReader.coordinateObject;
-        // const updated = updatedFenReader.coordinateObject;
-        // for (const key in updated) {
-        //     const currentPiece = current[key as Coordinate];
-        //     const updatedPiece = updated[key as Coordinate];
-        //     if (currentPiece === updatedPiece) continue;
-        //     console.log(currentPiece, updatedPiece);
-        //     // remove the old div and create a new one if necessary
-        //     this.#squaresObj[key].replaceChildren(updatedPiece ? this.#buildPiece(updatedPiece) : '');
-        // }
-    }
-
-    #commitNewMove(updatedFenReader: FenReader) {
-        const fen = updatedFenReader.fen;
-        this.#fenArray.push(fen);
-        // This doesn't work because the whole fen will always be different.
-        // Need to split out the relevant piece
-
-        const halfMoveClock = updatedFenReader.halfMoveClock;
-        if (Number(halfMoveClock) >= 50) {
-            // Draw
-        }
-
-        const piecePlacement = updatedFenReader.piecePlacement;
-        if (!this.#threeFoldRepetitionCounter[piecePlacement]) this.#threeFoldRepetitionCounter[piecePlacement] = 0;
-        this.#threeFoldRepetitionCounter[piecePlacement]++;
-        if (this.#threeFoldRepetitionCounter[piecePlacement] >= 3) {
-            // Draw
-        }
-    }
-
-    // #checkForDraws() {
-    //     const piecePlacement = this.fenReader.piecePlacement;
-    // }
-
-    goToPly(newFenIndex: number) {
-        const newFen = this.#fenArray.at(newFenIndex);
-        if (!newFen) return;
-        this.#diffAndUpdate(new FenReader(newFen));
-        this.#currentFenIndex = newFenIndex;
-    }
-
-    forward() {
-        this.goToPly(this.#currentFenIndex + 1);
-    }
-
-    back() {
-        this.goToPly(this.#currentFenIndex - 1);
-    }
-
-    goToCurrentPly() {
-        this.goToPly(this.#fenArray.length - 1);
-    }
-
-}
-
-customElements.define('chess-board', ChessBoard);
-const x = new ChessBoard();
-document.body.replaceChildren(x);
-const div = document.createElement('div');
-div.style.display = 'flex';
-div.style.gap = '2em';
-const button = document.createElement('button');
-button.textContent = 'New Game';
-button.onclick = () => x.newGame();
-const input = document.createElement('input');
-input.addEventListener('keyup', (e) => {
-    if (e.key === 'Enter') {
-        x.loadFen(input.value);
-    }
-})
-div.replaceChildren(button, input);
-document.body.append(div);
 
 class FenReader {
 
@@ -257,11 +46,17 @@ class FenReader {
     }
 
     get isCheck() {
-        return false;
+        const coordinateObject = this.coordinateObject;
+        const king = this.activeColor === 'w' ? 'K' : 'k';
+        const coordinate = Object.keys(coordinateObject)
+            .find(c => coordinateObject[c as Coordinate] === king) as Coordinate;
+        if (!coordinate) return false;
+        return this.#getIsSquareAttacked(coordinate);
     }
 
     get isCheckmate() {
         if (!this.isCheck) return false;
+        // Check available move length
         return false;
     }
 
@@ -387,7 +182,7 @@ class FenReader {
         const p = piece.toLowerCase();
         let isCandidateMove = false;
         if (p === 'k') {
-            isCandidateMove = this.#getKingMoves(from).has(to);
+            isCandidateMove = this.#getKingMovesWithCastling(from).has(to);
         }
         else if (p === 'q') {
             isCandidateMove = this.#getQueenMoves(from).has(to);
@@ -396,14 +191,15 @@ class FenReader {
             isCandidateMove = this.#getRookMoves(from).has(to);
         }
         else if (p === 'b') {
-            console.log(this.#getBishopMoves(from));
             isCandidateMove = this.#getBishopMoves(from).has(to);
         }
         else if (p === 'n') {
 
         }
         else if (p === 'p') {
-            isCandidateMove = this.#getPawnMoves(from).has(to);
+            isCandidateMove =
+                this.#getPawnForwardMoves(from).has(to) ||
+                this.#getPawnCaptureMoves(from).has(to);
         }
 
         if (!isCandidateMove) return null;
@@ -479,11 +275,33 @@ class FenReader {
     }
 
     // In the following piece-specific methods, we ignore checks completely and assume we are not in check.
-    // We handle that afterward in the "move" method. All these methods will be made #private
+    // We handle that afterward in the "requestMove" method.
     // I am allowing the color to be toggled so that we can use these to see attacked squares as well
 
-    #getKingMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
-        return new Set();
+    #getKingMovesExceptCastling(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+        const result: Set<Coordinate> = new Set();
+        // We will not include castling here because Kings can't attack via castling
+        // And this method is used to check attacked squares
+        for (const direction of ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft'] as Direction[]) {
+            const coordinate = this.#getAdjacentCoordinate(startCoordinate, direction);
+            if (!coordinate) continue;
+            if (this.getPieceColorAtCoordinate(coordinate) === color) continue;
+            result.add(coordinate);
+        }
+        return result;
+    }
+
+    #getKingMovesWithCastling(startCoordinate: Coordinate, color = this.activeColor) {
+        const result = this.#getKingMovesExceptCastling(startCoordinate, color);
+        if (color === 'w') {
+            if (this.whiteCanCastleKingside) result.add('g1');
+            if (this.whiteCanCastleQueenside) result.add('c1');
+        }
+        else {
+            if (this.blackCanCastleKingside) result.add('g8');
+            if (this.blackCanCastleQueenside) result.add('c8');
+        }
+        return result;
     }
 
     #getQueenMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
@@ -514,19 +332,12 @@ class FenReader {
         return new Set();
     }
 
-    #getPawnMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+    #getPawnForwardMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
         const result: Set<Coordinate> = new Set();
         const hasNotMoved = (startCoordinate[1] === '2' && color === 'w') || (startCoordinate[1] === '7' && color === 'b');
-        const oppositeColor = color === 'w' ? 'b' : 'w';
-
         const squareInFront = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'up' : 'down');
         const pieceInFront = squareInFront && this.getPieceByCoordinate(squareInFront);
         if (squareInFront && !pieceInFront) result.add(squareInFront);
-
-        const squareUpRight = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upright' : 'downleft');
-        if (squareUpRight && this.getPieceColorAtCoordinate(squareUpRight) === oppositeColor) result.add(squareUpRight);
-        const squareUpLeft = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upleft' : 'downright');
-        if (squareUpLeft && this.getPieceColorAtCoordinate(squareUpLeft) === oppositeColor) result.add(squareUpLeft);
 
         // Double jump
         if (hasNotMoved && squareInFront && !pieceInFront) {
@@ -534,54 +345,74 @@ class FenReader {
             if (twoInFront && !this.getPieceByCoordinate(twoInFront)) result.add(twoInFront);
         }
 
+        return result;
+    }
+
+    /** Captures and en passant */
+    #getPawnCaptureMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+        const result: Set<Coordinate> = new Set();
+        const oppositeColor = color === 'w' ? 'b' : 'w';
+
+        const squareUpRight = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upright' : 'downleft');
+        if (squareUpRight && this.getPieceColorAtCoordinate(squareUpRight) === oppositeColor) result.add(squareUpRight);
+        const squareUpLeft = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upleft' : 'downright');
+        if (squareUpLeft && this.getPieceColorAtCoordinate(squareUpLeft) === oppositeColor) result.add(squareUpLeft);
+
         const enPassantSquare = this.enPassantTarget;
         if (enPassantSquare === squareUpRight || enPassantSquare === squareUpLeft) {
             result.add(enPassantSquare);
         }
-        console.log(result);
+
         return result;
     }
+    /** Squares that pawns defend diagonally but can't necessarily move to */
+    #getPawnControllingMoves(startCoordinate: Coordinate, color = this.activeColor): Set<Coordinate> {
+        const result: Set<Coordinate> = new Set();
+
+        const squareUpRight = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upright' : 'downleft');
+        if (squareUpRight) result.add(squareUpRight);
+        const squareUpLeft = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upleft' : 'downright');
+        if (squareUpLeft) result.add(squareUpLeft);
+
+        return result;
+    }
+
+
     #getIsSquareAttacked(c: Coordinate, attacker: 'w' | 'b' = this.inactiveColor) {
         // Go through every piece and check if it can hit a square
-        let isAttacked = false;
-        for (const piece of Object.values(this.coordinateObject)) {
+        for (const [attackingCoordinate, piece] of Object.entries(this.coordinateObject)) {
             if (!piece) continue;
             const isWhite = piece.toUpperCase() === piece;
             if ((attacker === 'b' && isWhite)) continue;
             if (attacker === 'w' && !isWhite) continue;
             const p = piece.toLowerCase();
             if (p === 'k') {
-                if (this.#getKingMoves(c, attacker).has(c)) isAttacked = true;
-                break;
+                if (this.#getKingMovesExceptCastling(attackingCoordinate as Coordinate, attacker).has(c)) return true;
             }
             if (p === 'q') {
-                if (this.#getQueenMoves(c, attacker).has(c)) isAttacked = true;
-                break;
+                if (this.#getQueenMoves(attackingCoordinate as Coordinate, attacker).has(c)) return true;
             }
             if (p === 'r') {
-                if (this.#getRookMoves(c, attacker).has(c)) isAttacked = true;
-                break;
+                if (this.#getRookMoves(attackingCoordinate as Coordinate, attacker).has(c)) return true;
             }
             if (p === 'b') {
-                if (this.#getBishopMoves(c, attacker).has(c)) isAttacked = true;
-                break;
+                if (this.#getBishopMoves(attackingCoordinate as Coordinate, attacker).has(c)) return true;
             }
             if (p === 'n') {
-                if (this.#getKnightMoves(c, attacker).has(c)) isAttacked = true;
-                break;
+                if (this.#getKnightMoves(attackingCoordinate as Coordinate, attacker).has(c)) return true;
             }
             if (p === 'p') {
-                if (this.#getPawnMoves(c, attacker).has(c)) isAttacked = true;
-                break;
+                if (this.#getPawnControllingMoves(attackingCoordinate as Coordinate, attacker).has(c)) return true;
             }
         }
-        return isAttacked;
+        return false;
     }
 
     /** Get a new FenReader without changing moves and see if check is there.
      *  Use this to see if you are getting out of or moving into check before moving */
     #detectCheck(from: Coordinate, to: Coordinate): boolean {
         const testFenReader = this.#generateNewFenReaderFromMove(from, to, false);
+        console.log(testFenReader);
         return testFenReader.isCheck;
     }
 
@@ -704,3 +535,226 @@ class FenReader {
     }
 
 }
+
+class ChessBoard extends HTMLElement {
+
+    #isInitialized = false;
+    #squaresObj: Record<string, HTMLDivElement> = {};
+    #squaresMap: Map<HTMLDivElement, Coordinate> = new Map();
+    #pieceSymbols = {
+        k: '♚',
+        q: '♛',
+        r: '♜',
+        b: '♝',
+        n: '♞',
+        p: '♟',
+        K: '♔',
+        Q: '♕',
+        R: '♖',
+        B: '♗',
+        N: '♘',
+        P: '♙',
+    };
+    #threeFoldRepetitionCounter: Record<string, number> = {};
+    #fenArray: string[] = []; // Game history
+    #currentFenIndex = -1;
+
+    constructor() {
+        super();
+    }
+
+    connectedCallback() {
+        if (this.#isInitialized) return;
+        this.draggable = false;
+        let dark = false;
+        for (const rank of [8, 7, 6, 5, 4, 3, 2, 1]) {
+            for (const file of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+                const square = document.createElement('div');
+                square.draggable = false;
+                if (dark) square.classList.add('d');
+                this.#squaresObj[`${file}${rank}`] = square;
+                this.#squaresMap.set(square, `${file}${rank}` as Coordinate);
+                this.append(square);
+                dark = !dark;
+            }
+            dark = !dark;
+        }
+
+        this.addEventListener('request-move', (e) => this.#listen(e));
+
+        this.#isInitialized = true;
+    }
+
+    #listen(e: Event) {
+        const { fromSquare, toSquare } = (e as CustomEvent).detail;
+        if (!fromSquare || !toSquare) return;
+        if (fromSquare === toSquare) return;
+        const from = this.#squaresMap.get(fromSquare);
+        const to = this.#squaresMap.get(toSquare);
+        if (!from || !to) return;
+        const fenReader = new FenReader(this.fen);
+        const result = fenReader.requestMove(from, to);
+        if (result === null) return; // Illegal move
+        this.#diffAndUpdate(result);
+        this.#commitNewMove(result);
+    };
+
+    get fen() {
+        return this.#fenArray.at(-1) || '';
+    }
+
+    get fenReader() {
+        return new FenReader(this.fen);
+    }
+
+    /** Removes current game */
+    loadFen(fen: string) {
+        this.#fenArray.length = 0;
+        this.#currentFenIndex = -1;
+        const fenReader = new FenReader(fen);
+        this.#diffAndUpdate(fenReader);
+        this.#commitNewMove(fenReader);
+    }
+
+    newGame() {
+        this.loadFen(FenReader.startingFen);
+    }
+
+    goToPly(newFenIndex: number) {
+        if (newFenIndex > this.#fenArray.length - 1) return;
+        if (this.#currentFenIndex <= 0) return;
+        const newFen = this.#fenArray.at(newFenIndex);
+        if (!newFen) return;
+        this.#diffAndUpdate(new FenReader(newFen));
+        this.#currentFenIndex = newFenIndex;
+    }
+
+    forward() {
+        if (this.#currentFenIndex >= this.#fenArray.length - 1) return;
+        this.goToPly(this.#currentFenIndex + 1);
+    }
+
+    back() {
+        if (this.#currentFenIndex <= 0) return;
+        this.goToPly(this.#currentFenIndex - 1);
+    }
+
+    goToLatest() {
+        this.goToPly(this.#fenArray.length - 1);
+    }
+
+    /** Piece factory function. We don't care about keeping pieces in state */
+    #buildPiece(pieceNotation: PieceNotation) {
+        const pieceDiv = document.createElement('div');
+        pieceDiv.draggable = false;
+        pieceDiv.textContent = this.#pieceSymbols[pieceNotation];
+
+        const color = pieceNotation.toUpperCase() === pieceNotation ? 'w' : 'b';
+        pieceDiv.className = `p ${color}`;
+
+        let offsetX = 0;
+        let offsetY = 0;
+
+        const handleDown = (e: PointerEvent) => {
+            if (!this.#squaresMap.has(pieceDiv.parentElement as HTMLDivElement)) return;
+            if (color !== this.fenReader.activeColor) return;
+            pieceDiv.style.position = 'absolute';
+            offsetX = pieceDiv.getBoundingClientRect().width / 2;
+            offsetY = pieceDiv.getBoundingClientRect().height / 2;
+            const left = e.clientX - offsetX;
+            const top = e.clientY - offsetY;
+            pieceDiv.style.left = `${left}px`;
+            pieceDiv.style.top = `${top}px`;
+            window.addEventListener('pointermove', handleMove);
+            window.addEventListener('pointerup', handleUp, { once: true });
+        };
+        const handleMove = (e: PointerEvent) => {
+            const left = e.clientX - offsetX;
+            const top = e.clientY - offsetY;
+            pieceDiv.style.left = `${left}px`;
+            pieceDiv.style.top = `${top}px`;
+        };
+        const handleUp = (e: PointerEvent) => {
+            pieceDiv.removeAttribute('style');
+            window.removeEventListener('pointermove', handleMove);
+
+            const hoveredSquare = document.elementsFromPoint(e.clientX, e.clientY)
+                .find(el => el instanceof HTMLDivElement && this.#squaresMap.has(el));
+            if (!hoveredSquare) return;
+            pieceDiv.dispatchEvent(new CustomEvent('request-move', {
+                detail: {
+                    fromSquare: pieceDiv.parentElement,
+                    toSquare: hoveredSquare,
+                },
+                bubbles: true,
+            }));
+        };
+        pieceDiv.addEventListener('dragstart', (e) => e.preventDefault());
+        pieceDiv.addEventListener('mousedown', (e) => e.preventDefault());
+        pieceDiv.addEventListener('pointerdown', handleDown);
+        return pieceDiv;
+    }
+
+    #diffAndUpdate(updatedFenReader: FenReader) {
+        const current = this.fenReader.coordinateObject;
+        const updated = updatedFenReader.coordinateObject;
+        for (const key in updated) {
+            const currentPiece = current[key as Coordinate];
+            const updatedPiece = updated[key as Coordinate];
+            if (currentPiece && currentPiece === updatedPiece) continue;
+            // remove the old div and create a new one if necessary
+            this.#squaresObj[key].replaceChildren(updatedPiece ? this.#buildPiece(updatedPiece) : '');
+        }
+    }
+
+    #commitNewMove(updatedFenReader: FenReader) {
+        const fen = updatedFenReader.fen;
+        this.#fenArray.push(fen);
+
+        const halfMoveClock = updatedFenReader.halfMoveClock;
+        if (Number(halfMoveClock) >= 50) {
+            // Draw
+        }
+
+        const piecePlacement = updatedFenReader.piecePlacement;
+        if (!this.#threeFoldRepetitionCounter[piecePlacement]) this.#threeFoldRepetitionCounter[piecePlacement] = 0;
+        this.#threeFoldRepetitionCounter[piecePlacement] += 1;
+        if (this.#threeFoldRepetitionCounter[piecePlacement] >= 3) {
+            // Draw
+        }
+    }
+
+    // #checkForDraws() {
+    //     const piecePlacement = this.fenReader.piecePlacement;
+    // }
+}
+
+customElements.define('chess-board', ChessBoard);
+const x = new ChessBoard();
+document.body.replaceChildren(x);
+
+
+(() => {
+    const div = document.createElement('div');
+    div.style.display = 'grid';
+    div.style.gridTemplateColumns = '1fr 1fr';
+    div.style.gap = '2em';
+    const button = document.createElement('button');
+    button.textContent = 'New Game';
+    button.onclick = () => x.newGame();
+    const input = document.createElement('input');
+    input.placeholder = 'Load FEN';
+    input.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+            x.loadFen(input.value);
+        }
+    })
+    const back = document.createElement('button');
+    const forward = document.createElement('button');
+    back.textContent = '<';
+    forward.textContent = '>';
+    back.onclick = () => x.back();
+    forward.onclick = () => x.forward();
+    div.replaceChildren(button, input, back, forward);
+    document.body.append(div);
+})();
