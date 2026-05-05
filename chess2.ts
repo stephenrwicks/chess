@@ -18,8 +18,9 @@ class FenReader {
     #enPassantTarget = '';
     #halfMoveClock = '';
     #fullMoveNumber = '';
+    #isPromotion: boolean;
 
-    constructor(fen: string = FenReader.startingFen) {
+    constructor(fen: string = FenReader.startingFen, isPromotion = false) {
         this.#fen = fen;
         const split = fen.split(' ');
         if (split.length !== 6) throw new Error('Illegal FEN!');
@@ -41,6 +42,7 @@ class FenReader {
             }
         }
         Object.freeze(this.#coordinateObject);
+        this.#isPromotion = isPromotion;
     }
 
     get fen() {
@@ -60,11 +62,15 @@ class FenReader {
         return this.activeColor === 'w' ? 'b' : 'w';
     }
 
+    get isPromotion() {
+        return this.#isPromotion;
+    }
+
     get gameState() {
         const activeColor = this.activeColor;
         const inactiveColor = this.inactiveColor;
         const isCheck = this.#getIsCheck();
-        const hasLegalMoves = this.#getHasLegalMoves(activeColor);
+        const hasLegalMoves = this.#getActiveColorHasLegalMoves();
         return {
             activeColor,
             inactiveColor,
@@ -74,6 +80,62 @@ class FenReader {
             is50MoveRule: Number(this.#halfMoveClock) >= 50,
             isInsufficientMaterial: this.#getIsInsufficientMaterial(),
         };
+    }
+
+
+
+    getMoveset(from: string): Set<string> {
+        const piece = this.getPieceAt(from);
+        let moveset: Set<string> = new Set();
+        if (!piece) return moveset;
+        const p = piece.toLowerCase();
+        if (p === 'k') moveset = this.#getKingMovesWithCastling(from);
+        if (p === 'q') moveset = this.#getQueenMoves(from);
+        if (p === 'r') moveset = this.#getRookMoves(from);
+        if (p === 'b') moveset = this.#getBishopMoves(from);
+        if (p === 'n') moveset = this.#getKnightMoves(from);
+        if (p === 'p') moveset = this.#getPawnMoves(from);
+        for (const to of moveset) {
+            if (this.#detectCheck(from, to)) moveset.delete(to);
+        }
+        return moveset;
+    }
+
+    /**  On every move we just create a new instance. Immutable structure. Return null if move is illegal */
+    requestMove(from: string, to: string): FenReader | null {
+        if (!from || !to) return null;
+        if (from === to) return null;
+        const piece = this.getPieceAt(from);
+        if (!piece) return null;
+        const isWhitePiece = piece === piece.toUpperCase();
+        if (isWhitePiece && this.#activeColor === 'b') return null;
+        if (!isWhitePiece && this.#activeColor === 'w') return null;
+        const moveset = this.getMoveset(from);
+        if (!moveset.has(to)) return null;
+        return this.#generateNewFenReaderFromMove(from, to);
+    }
+
+    /** Intermediate step that takes the current FenReader with a pawn on 1st/8th rank and returns a new FenReader */
+    requestPromotion(to: 'Q' | 'R' | 'B' | 'N' = 'Q'): FenReader {
+        const promotedPawnColor = this.inactiveColor;
+        const rankIndex = promotedPawnColor === 'w' ? 0 : 7
+        if (promotedPawnColor === 'b') to = to.toLowerCase() as typeof to;
+        const ranks = this.piecePlacement.split('/');
+        const rank = ranks[rankIndex];
+        const pawnIndex = rank.toLowerCase().indexOf('p');
+        if (pawnIndex < 0) throw new Error('promotion error');
+        const expandedRank = this.#expandRank(rank);
+        expandedRank[pawnIndex] = to;
+        const compressed = this.#compressRank(expandedRank);
+        ranks.splice(rankIndex, 1, compressed);
+        const piecePlacement = ranks.join('/');
+        const split = this.fen.split(' ');
+        split[0] = piecePlacement;
+        return new FenReader(split.join(' '));
+    }
+
+    getPieceAt(coordinate: string): PieceNotation | null {
+        return this.#coordinateObject[coordinate];
     }
 
     #getIsCheck() {
@@ -120,57 +182,6 @@ class FenReader {
         return true;
     };
 
-
-    /**  On every move we just create a new instance. Immutable structure. Return null if move is illegal */
-    requestMove(from: string, to: string): FenReader | null {
-        if (from === to) return null; // Not a move
-        const piece = this.getPieceAt(from);
-        const activeColor = this.activeColor;
-        if (!piece) return null;
-        const isWhitePiece = piece === piece.toUpperCase();
-        if (isWhitePiece && activeColor === 'b') return null;
-        if (!isWhitePiece && activeColor === 'w') return null;
-
-        const p = piece.toLowerCase();
-        let isCandidateMove = false;
-        if (p === 'k') {
-            isCandidateMove = this.#getKingMovesWithCastling(from).has(to);
-        }
-        else if (p === 'q') {
-            isCandidateMove = this.#getQueenMoves(from).has(to);
-        }
-        else if (p === 'r') {
-            isCandidateMove = this.#getRookMoves(from).has(to);
-        }
-        else if (p === 'b') {
-            isCandidateMove = this.#getBishopMoves(from).has(to);
-        }
-        else if (p === 'n') {
-            isCandidateMove = this.#getKnightMoves(from).has(to);
-        }
-        else if (p === 'p') {
-            isCandidateMove =
-                this.#getPawnForwardMoves(from).has(to) ||
-                this.#getPawnCaptureMoves(from).has(to);
-        }
-
-        if (!isCandidateMove) return null;
-
-        if (this.#detectCheck(from, to)) {
-            // Move could be possible but puts the player in check,
-            // or the player is currently in check and the move doesn't get out.
-            // So we return null
-            return null;
-        }
-
-        // The move is legal. Return a new instance
-        return this.#generateNewFenReaderFromMove(from, to);
-    }
-
-
-    getPieceAt(coordinate: string): PieceNotation | null {
-        return this.#coordinateObject[coordinate];
-    }
 
     /** Determines which color is at a square (or returns null) */
     #getPieceColorAt(coordinate: string): 'w' | 'b' | null {
@@ -373,7 +384,7 @@ class FenReader {
         return result;
     }
 
-    #getPawnForwardMoves(startCoordinate: string, color = this.activeColor): Set<string> {
+    #getPawnMoves(startCoordinate: string, color = this.activeColor): Set<string> {
         const result: Set<string> = new Set();
         const hasNotMoved = (startCoordinate[1] === '2' && color === 'w') || (startCoordinate[1] === '7' && color === 'b');
         const squareInFront = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'up' : 'down');
@@ -386,12 +397,6 @@ class FenReader {
             if (twoInFront && !this.getPieceAt(twoInFront)) result.add(twoInFront);
         }
 
-        return result;
-    }
-
-    /** Captures and en passant */
-    #getPawnCaptureMoves(startCoordinate: string, color = this.activeColor): Set<string> {
-        const result: Set<string> = new Set();
         const oppositeColor = color === 'w' ? 'b' : 'w';
 
         const squareUpRight = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upright' : 'downleft');
@@ -407,7 +412,7 @@ class FenReader {
     }
 
     /** Squares that pawns defend diagonally but can't necessarily move to */
-    #getPawnControllingMoves(startCoordinate: string, color = this.activeColor): Set<string> {
+    #getPawnControllingSquares(startCoordinate: string, color = this.activeColor): Set<string> {
         const result: Set<string> = new Set();
         const squareUpRight = this.#getAdjacentCoordinate(startCoordinate, color === 'w' ? 'upright' : 'downleft');
         if (squareUpRight) result.add(squareUpRight);
@@ -417,52 +422,15 @@ class FenReader {
         return result;
     }
 
-    #getHasLegalMoves(color: 'w' | 'b') {
-        // Brute force loop through every possible move and return true if we find one move that does not enter check
-        for (const [coord, piece] of Object.entries(this.#coordinateObject)) {
+    #getActiveColorHasLegalMoves() {
+        // Check moveset length for every piece of active color
+        for (const [coordinate, piece] of Object.entries(this.#coordinateObject)) {
             if (!piece) continue;
-            const isWhite = piece.toUpperCase() === piece;
-            if ((color === 'b' && isWhite)) continue;
-            if (color === 'w' && !isWhite) continue;
-            const p = piece.toLowerCase();
-            if (p === 'k') {
-                const candidateMoves = this.#getKingMovesWithCastling(coord, color);
-                for (const candidateMove of candidateMoves) {
-                    if (!this.#detectCheck(coord, candidateMove)) return true;
-                }
-            }
-            else if (p === 'q') {
-                const candidateMoves = this.#getQueenMoves(coord, color);
-                for (const candidateMove of candidateMoves) {
-                    if (!this.#detectCheck(coord, candidateMove)) return true;
-                }
-            }
-            else if (p === 'r') {
-                const candidateMoves = this.#getRookMoves(coord, color);
-                for (const candidateMove of candidateMoves) {
-                    if (!this.#detectCheck(coord, candidateMove)) return true;
-                }
-            }
-            else if (p === 'b') {
-                const candidateMoves = this.#getBishopMoves(coord, color);
-                for (const candidateMove of candidateMoves) {
-                    if (!this.#detectCheck(coord, candidateMove)) return true;
-                }
-            }
-            else if (p === 'n') {
-                const candidateMoves = this.#getKnightMoves(coord, color);
-                for (const candidateMove of candidateMoves) {
-                    if (!this.#detectCheck(coord, candidateMove)) return true;
-                }
-            }
-            else if (p === 'p') {
-                for (const candidateMove of this.#getPawnForwardMoves(coord, color)) {
-                    if (!this.#detectCheck(coord, candidateMove)) return true;
-                }
-                for (const candidateMove of this.#getPawnCaptureMoves(coord, color)) {
-                    if (!this.#detectCheck(coord, candidateMove)) return true;
-                }
-            }
+            const isWhitePiece = piece.toUpperCase() === piece;
+            if ((this.activeColor === 'b' && isWhitePiece)) continue;
+            if (this.activeColor === 'w' && !isWhitePiece) continue;
+            const moveset = this.getMoveset(coordinate);
+            if (moveset.size > 0) return true; // A move exists, early return true
         }
         return false;
     }
@@ -481,13 +449,13 @@ class FenReader {
             else if (p === 'r' && this.#getRookMoves(attackingCoordinate, color).has(c)) return true;
             else if (p === 'b' && this.#getBishopMoves(attackingCoordinate, color).has(c)) return true;
             else if (p === 'n' && this.#getKnightMoves(attackingCoordinate, color).has(c)) return true;
-            else if (p === 'p' && this.#getPawnControllingMoves(attackingCoordinate, color).has(c)) return true;
+            else if (p === 'p' && this.#getPawnControllingSquares(attackingCoordinate, color).has(c)) return true;
         }
         return false;
     }
 
     /** Get a new FenReader without changing moves and see if check is there.
-     *  Use this to see if you are getting out of or moving into check before moving */
+     *  Used to see if we are getting out of or moving into check before moving */
     #detectCheck(from: string, to: string): boolean {
         const testFenReader = this.#generateNewFenReaderFromMove(from, to, false);
         return testFenReader.#getIsCheck();
@@ -507,7 +475,7 @@ class FenReader {
         const toRank = to[1];
         const fromFileIndex = 'abcdefgh'.indexOf(fromFile);
         const toFileIndex = 'abcdefgh'.indexOf(toFile);
-        
+
         // Reset if we moved a pawn or if we land on a piece.
         const shouldReset50MoveClock = movingPiece.toLowerCase() === 'p' || !!this.getPieceAt(to);
 
@@ -519,11 +487,9 @@ class FenReader {
             (this.activeColor === 'w' && movingPiece === 'P' && to === enPassantTarget) ||
             (this.activeColor === 'b' && movingPiece === 'p' && to === enPassantTarget);
 
-        const isWhitePromotion = (this.activeColor === 'w' && movingPiece === 'P' && toRank === '8');
-        const isBlackPromotion = (this.activeColor === 'b' && movingPiece === 'p' && toRank === '1');
-        // Underpromotion requires a prompt. That's interesting because it is outside the scope here
-        if (isWhitePromotion) movingPiece = 'Q';
-        if (isBlackPromotion) movingPiece = 'q';
+        const isPromotion =
+            (this.activeColor === 'w' && movingPiece === 'P' && toRank === '8') ||
+            (this.activeColor === 'b' && movingPiece === 'p' && toRank === '1');
 
         if (isWhiteCastleKingside || from === 'e1' || from === 'h1' || to === 'h1') castlingRights = castlingRights.replace('K', '');
         if (isBlackCastleKingside || from === 'e8' || from === 'h8' || to === 'h8') castlingRights = castlingRights.replace('k', '');
@@ -594,7 +560,9 @@ class FenReader {
 
         const newPiecePlacement = ranks.join('/');
         const fen = `${newPiecePlacement} ${activeColor} ${castlingRights} ${newEnpassantTarget} ${halfMoveClock} ${fullMoveNumber}`;
-        return new FenReader(fen);
+
+        const result = new FenReader(fen, isPromotion);
+        return result;
     }
 
     /** Takes a fen rank string and normalizes it to 8 character array (adds zeros in place of numbers) */
@@ -651,6 +619,7 @@ class ChessBoard extends HTMLElement {
     #threeFoldRepetitionCounter: Record<string, number> = {};
     #fenArray: string[] = []; // Game history
     #currentlyViewingIndex = -1;
+    #isGameOver = false;
 
     constructor() {
         super();
@@ -678,10 +647,9 @@ class ChessBoard extends HTMLElement {
         return this.#fenArray.at(this.#currentlyViewingIndex) || '';
     }
 
-
-
     /** Removes current game */
     loadFen(fen: string) {
+        this.#isGameOver = false;
         this.#fenArray.length = 0;
         this.#currentlyViewingIndex = -1;
         this.#threeFoldRepetitionCounter = {};
@@ -702,7 +670,7 @@ class ChessBoard extends HTMLElement {
         const newFenReader = new FenReader(newFen);
         this.#updateDom(newFenReader);
         this.#currentlyViewingIndex = newFenIndex;
-        this.#updateCurrentMoveClass(newFenReader);
+        this.#updateDataset(newFenReader);
     }
 
     forward() {
@@ -715,19 +683,31 @@ class ChessBoard extends HTMLElement {
         this.goToPly(this.#currentlyViewingIndex - 1);
     }
 
-    goToLatest() {
-        this.goToPly(this.#fenArray.length - 1);
+    goToStart() {
+        this.goToPly(0);
     }
 
-    #tryMove(from: string, to: string) {
-        const updatedFenReader = new FenReader(this.fen).requestMove(from, to);
-        if (updatedFenReader === null) return; // Illegal move
+    goToLatest() {
+        this.goToPly(-1);
+    }
+
+    async #tryMove(from: string, to: string) {
+        let updatedFenReader = new FenReader(this.fen).requestMove(from, to);
+        if (updatedFenReader === null) return;
+
+        if (updatedFenReader.isPromotion) {
+            const choice = await this.#promotionDialog();
+            updatedFenReader = updatedFenReader.requestPromotion(choice);
+        }
+
         this.#updateDom(updatedFenReader);
         this.#commitNewMove(updatedFenReader);
+
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
     }
 
-    /** Piece factory function. We don't care about keeping pieces in state */
+    /** Piece factory function. We don't care about keeping pieces in state.
+     * Currently any time a move happens I just destroy piece and recreate it. */
     #buildPiece(pieceNotation: PieceNotation) {
         const pieceDiv = document.createElement('div');
         pieceDiv.textContent = this.#pieceSymbols[pieceNotation];
@@ -738,9 +718,12 @@ class ChessBoard extends HTMLElement {
         let offsetX = 0;
         let offsetY = 0;
 
+        let moveset: Set<string> | null = null;
+
         const handleDown = (e: PointerEvent) => {
-            if (!this.#squaresMap.has(pieceDiv.parentElement as HTMLDivElement)) return;
-            if (this.fen !== this.#fenArray.at(-1)) return;
+            if (this.#isGameOver) return;
+            const from = this.#squaresMap.get(pieceDiv.parentElement as HTMLDivElement);
+            if (!from) return;
             const fenReader = new FenReader(this.fen);
             if (color !== fenReader.activeColor) return;
             pieceDiv.style.position = 'absolute';
@@ -752,6 +735,12 @@ class ChessBoard extends HTMLElement {
             pieceDiv.style.top = `${top}px`;
             window.addEventListener('pointermove', handleMove);
             window.addEventListener('pointerup', handleUp, { once: true });
+            this.#squaresObj[from].classList.add('active');
+            moveset = fenReader.getMoveset(from);
+            for (const coordinate of moveset) {
+                const square = this.#squaresObj[coordinate];
+                square.classList.add('legal');
+            }
         };
         const handleMove = (e: PointerEvent) => {
             const left = e.clientX - offsetX;
@@ -770,6 +759,12 @@ class ChessBoard extends HTMLElement {
             const from = this.#squaresMap.get(pieceDiv.parentElement as HTMLDivElement);
             const to = this.#squaresMap.get(hoveredSquare as HTMLDivElement);
             if (!from || !to) return;
+
+            this.#squaresObj[from].classList.remove('active');
+            for (const c of moveset || []) {
+                const square = this.#squaresObj[c];
+                square.classList.remove('legal');
+            }
             this.#tryMove(from, to);
         };
         pieceDiv.addEventListener('dragstart', (e) => e.preventDefault());
@@ -779,31 +774,45 @@ class ChessBoard extends HTMLElement {
     }
 
     #updateDom(updatedFenReader: FenReader) {
-        const isNewGame = this.fen === '';
-        const currentFenReader = new FenReader(isNewGame ? FenReader.startingFen : this.fen);
+        const isEmptyBoard = this.fen === '';
+        const currentFenReader = new FenReader(isEmptyBoard ? FenReader.startingFen : this.fen);
+        const { activeColor, isCheck, isCheckmate } = updatedFenReader.gameState;
         for (const rank of '12345678') {
             for (const file of 'abcdefgh') {
                 const coordinate = `${file}${rank}`;
+                const square = this.#squaresObj[coordinate];
+                square.classList.remove('check');
                 const currentPiece = currentFenReader.getPieceAt(coordinate);
                 const updatedPiece = updatedFenReader.getPieceAt(coordinate);
-                if (currentPiece === updatedPiece && !isNewGame) continue;
-                this.#squaresObj[coordinate].replaceChildren(updatedPiece ? this.#buildPiece(updatedPiece) : '')
+                if (isCheck && ((activeColor === 'w' && updatedPiece === 'K') || (activeColor === 'b' && updatedPiece === 'k'))) {
+                    square.classList.add('check');
+                }
+                if (currentPiece === updatedPiece && !isEmptyBoard) continue;
+                square.replaceChildren(updatedPiece ? this.#buildPiece(updatedPiece) : '')
             }
         }
 
     }
 
-    #updateCurrentMoveClass(fenReader: FenReader) {
-        this.classList.remove('current', 'w', 'b');
-        const isCurrent = this.#fenArray.length - 1 === this.#fenArray.indexOf(fenReader.fen);
-        this.dataset.isCurrent = String(isCurrent);
-        this.dataset.activeColor = isCurrent ? fenReader.activeColor : '';
+    #updateDataset(updatedFenReader: FenReader) {
+        const isCurrent = this.#fenArray.length - 1 === this.#fenArray.indexOf(updatedFenReader.fen);
+        this.dataset.activeColor = isCurrent ? updatedFenReader.activeColor : '';
+        if (this.#isGameOver) this.dataset.activeColor = '';
     }
 
-    #commitNewMove(updatedFenReader: FenReader) {
+    #promotionDialog(): Promise<'Q' | 'R' | 'N' | 'B'> {
+        return new Promise(resolve => {
+            const result = prompt('?');
+            if (result === 'Q' || result === 'R' || result === 'N' || result === 'B') resolve(result);
+            resolve('Q');
+        });
+    }
+
+    async #commitNewMove(updatedFenReader: FenReader) {
         const fen = updatedFenReader.fen;
-        this.#fenArray.push(fen);
         const gameState = updatedFenReader.gameState;
+
+        this.#fenArray.push(fen);
 
         if (gameState.isCheckmate) {
             alert('Game over: Checkmate');
@@ -834,11 +843,11 @@ class ChessBoard extends HTMLElement {
             return this.#gameOver('50mr');
         }
 
-        this.#updateCurrentMoveClass(updatedFenReader);
+        this.#updateDataset(updatedFenReader);
     }
 
     #gameOver(result: string) {
-
+        this.#isGameOver = true;
     }
 }
 
