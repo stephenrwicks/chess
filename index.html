@@ -21,8 +21,10 @@
             --lightSquare: #9f90b0;
             --darkSquare: #7d4a8d;
             box-sizing: border-box;
-            width: min-content;
+            width: fit-content;
             height: min-content;
+            /* display: grid;
+            grid-template-columns: min-content 1fr; */
 
             * {
                 font-size: 16px;
@@ -60,6 +62,7 @@
                 /* box-shadow: 2px 2px 1rem #9f90b0; */
                 width: fit-content;
                 height: min-content;
+                grid-row: span 2;
                 display: grid;
                 grid-template-columns: repeat(8, 1fr);
                 gap: 0px;
@@ -145,12 +148,18 @@
                 }
             }
 
+            >.panel {
+                display: grid;
+                place-items: center;
+                padding: calc(var(--squareSize)/4);
+            }
+
 
 
             >.controls {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                gap: 2rem;
+                gap: calc(var(--squareSize)/4);
                 place-items: center;
             }
         }
