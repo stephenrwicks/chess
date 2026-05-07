@@ -58,6 +58,10 @@ class FenReader {
         return this.#activeColor as 'w' | 'b';
     }
 
+    get fullMoveNumber() {
+        return this.#fullMoveNumber;
+    }
+
     get inactiveColor() {
         return this.activeColor === 'w' ? 'b' : 'w';
     }
@@ -81,8 +85,6 @@ class FenReader {
             isInsufficientMaterial: this.#getIsInsufficientMaterial(),
         };
     }
-
-
 
     getMoveset(from: string): Set<string> {
         const piece = this.getPieceAt(from);
@@ -116,16 +118,16 @@ class FenReader {
     }
 
     /** Intermediate step that takes the current FenReader with a pawn on 1st/8th rank and returns a new FenReader */
-    requestPromotion(to: 'Q' | 'R' | 'B' | 'N' = 'Q'): FenReader {
+    requestPromotion(promoteTo: 'Q' | 'R' | 'B' | 'N' = 'Q'): FenReader {
         const promotedPawnColor = this.inactiveColor;
         const rankIndex = promotedPawnColor === 'w' ? 0 : 7
-        if (promotedPawnColor === 'b') to = to.toLowerCase() as typeof to;
+        if (promotedPawnColor === 'b') promoteTo = promoteTo.toLowerCase() as typeof promoteTo;
         const ranks = this.piecePlacement.split('/');
         const rank = ranks[rankIndex];
         const pawnIndex = rank.toLowerCase().indexOf('p');
         if (pawnIndex < 0) throw new Error('promotion error');
         const expandedRank = this.#expandRank(rank);
-        expandedRank[pawnIndex] = to;
+        expandedRank[pawnIndex] = promoteTo;
         const compressed = this.#compressRank(expandedRank);
         ranks.splice(rankIndex, 1, compressed);
         const piecePlacement = ranks.join('/');
@@ -136,6 +138,14 @@ class FenReader {
 
     getPieceAt(coordinate: string): PieceNotation | null {
         return this.#coordinateObject[coordinate];
+    }
+
+    findPiece(piece: PieceNotation): string[] {
+        const coordinates = [];
+        for (const [c, p] of Object.entries(this.#coordinateObject)) {
+            if (p === piece) coordinates.push(c);
+        }
+        return coordinates;
     }
 
     #getIsCheck() {
@@ -602,7 +612,7 @@ class ChessBoard extends HTMLElement {
     #isInitialized = false;
     #squaresObj: Record<string, HTMLDivElement> = {};
     #squaresMap: Map<HTMLDivElement, string> = new Map();
-    #pieceSymbols = {
+    #pieceSymbols: { [key: string]: string } = {
         k: '♚',
         q: '♛',
         r: '♜',
@@ -618,8 +628,15 @@ class ChessBoard extends HTMLElement {
     };
     #threeFoldRepetitionCounter: Record<string, number> = {};
     #fenArray: string[] = []; // Game history
-    #currentlyViewingIndex = -1;
+    #currentlyViewingIndex = 0;
     #isGameOver = false;
+    #backButton = document.createElement('button');
+    #forwardButton = document.createElement('button');
+    #goToStartButton = document.createElement('button');
+    #goToEndButton = document.createElement('button');
+    #moveNumberDiv = document.createElement('div');
+
+    autoPromote = false;
 
     constructor() {
         super();
@@ -628,58 +645,113 @@ class ChessBoard extends HTMLElement {
     connectedCallback() {
         if (this.#isInitialized) return;
         let dark = false;
+        const board = document.createElement('div');
+        board.className = 'board';
         for (const rank of '87654321') {
             for (const file of 'abcdefgh') {
                 const square = document.createElement('div');
                 if (dark) square.classList.add('d');
                 this.#squaresObj[`${file}${rank}`] = square;
                 this.#squaresMap.set(square, `${file}${rank}`);
-                this.append(square);
+                board.append(square);
                 dark = !dark;
             }
             dark = !dark;
         }
 
+        const controls = document.createElement('div');
+        controls.className = 'controls';
+
+        const newGameButton = document.createElement('button');
+        newGameButton.type = 'button';
+        newGameButton.textContent = 'New Game';
+        newGameButton.onclick = () => this.newGame();
+
+        const fenInput = document.createElement('input');
+        fenInput.placeholder = 'Load FEN';
+        fenInput.addEventListener('keyup', (e) => {
+            if (e.key !== 'Enter') return;
+            this.loadFen(fenInput.value);
+        });
+
+        this.#backButton.type = 'button';
+        this.#backButton.textContent = '<';
+        this.#backButton.onclick = () => this.back();
+
+        this.#forwardButton.type = 'button';
+        this.#forwardButton.textContent = '>';
+        this.#forwardButton.onclick = () => this.forward();
+
+        this.#goToStartButton.type = 'button';
+        this.#goToStartButton.textContent = '<<';
+        this.#goToStartButton.onclick = () => this.goToStart();
+
+        this.#goToEndButton.type = 'button';
+        this.#goToEndButton.textContent = '>>';
+        this.#goToEndButton.onclick = () => this.goToEnd();
+
+        controls.replaceChildren(
+            newGameButton,
+            fenInput,
+            this.#backButton,
+            this.#forwardButton,
+            this.#goToStartButton,
+            this.#goToEndButton
+        );
+
+        const panel = document.createElement('div');
+        panel.replaceChildren(this.#moveNumberDiv);
+
+
+        this.replaceChildren(board, controls, panel);
+
+        this.newGame();
         this.#isInitialized = true;
     }
 
     get fen() {
-        return this.#fenArray.at(this.#currentlyViewingIndex) || '';
+        return this.#fenArray.at(this.#currentlyViewingIndex) ?? '';
     }
 
-    /** Removes current game */
+    get isCurrent() {
+        return this.#currentlyViewingIndex === this.#fenArray.length - 1;
+    }
+
     loadFen(fen: string) {
         this.#isGameOver = false;
         this.#fenArray.length = 0;
-        this.#currentlyViewingIndex = -1;
+        this.#currentlyViewingIndex = 0;
         this.#threeFoldRepetitionCounter = {};
+        console.log(fen);
         const fenReader = new FenReader(fen);
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
+
     }
 
     newGame() {
         this.loadFen(FenReader.startingFen);
     }
 
-    goToPly(newFenIndex: number) {
-        if (newFenIndex > this.#fenArray.length - 1) return;
-        if (newFenIndex < -1) return;
-        const newFen = this.#fenArray.at(newFenIndex);
-        if (!newFen) return;
-        const newFenReader = new FenReader(newFen);
-        this.#updateDom(newFenReader);
-        this.#currentlyViewingIndex = newFenIndex;
-        this.#updateDataset(newFenReader);
+    goToPly(fenIndex: number) {
+        if (fenIndex < 0) return;
+        if (fenIndex > this.#fenArray.length - 1) return;
+
+
+        const newFen = this.#fenArray[fenIndex];
+
+        const fenReader = new FenReader(newFen);
+        this.#updateDom(fenReader);
+        this.#currentlyViewingIndex = fenIndex;
+
     }
 
     forward() {
-        //if (this.#currentlyViewingIndex >= this.#fenArray.length - 1) return;
+        if (this.isCurrent) return;
         this.goToPly(this.#currentlyViewingIndex + 1);
     }
 
     back() {
-        if (this.#currentlyViewingIndex <= 0) return;
         this.goToPly(this.#currentlyViewingIndex - 1);
     }
 
@@ -687,28 +759,31 @@ class ChessBoard extends HTMLElement {
         this.goToPly(0);
     }
 
-    goToLatest() {
-        this.goToPly(-1);
+    goToEnd() {
+        this.goToPly(this.#fenArray.length - 1);
     }
 
     async #tryMove(from: string, to: string) {
-        let updatedFenReader = new FenReader(this.fen).requestMove(from, to);
-        if (updatedFenReader === null) return;
+        let fenReader = new FenReader(this.fen).requestMove(from, to);
+        if (fenReader === null) return;
 
-        if (updatedFenReader.isPromotion) {
-            const choice = await this.#promotionDialog();
-            updatedFenReader = updatedFenReader.requestPromotion(choice);
+        if (fenReader.isPromotion) {
+            const promoteTo = this.autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
+            fenReader = fenReader.requestPromotion(promoteTo);
+            if (fenReader === null) return;
         }
 
-        this.#updateDom(updatedFenReader);
-        this.#commitNewMove(updatedFenReader);
+        this.#updateDom(fenReader);
+        this.#commitNewMove(fenReader);
 
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
+
     }
+
 
     /** Piece factory function. We don't care about keeping pieces in state.
      * Currently any time a move happens I just destroy piece and recreate it. */
-    #buildPiece(pieceNotation: PieceNotation) {
+    #buildPiece(pieceNotation: PieceNotation): HTMLDivElement {
         const pieceDiv = document.createElement('div');
         pieceDiv.textContent = this.#pieceSymbols[pieceNotation];
 
@@ -722,6 +797,7 @@ class ChessBoard extends HTMLElement {
 
         const handleDown = (e: PointerEvent) => {
             if (this.#isGameOver) return;
+            if (!this.isCurrent) return;
             const from = this.#squaresMap.get(pieceDiv.parentElement as HTMLDivElement);
             if (!from) return;
             const fenReader = new FenReader(this.fen);
@@ -751,20 +827,19 @@ class ChessBoard extends HTMLElement {
         const handleUp = (e: PointerEvent) => {
             pieceDiv.removeAttribute('style');
             window.removeEventListener('pointermove', handleMove);
+            for (const coordinate of moveset || []) {
+                const square = this.#squaresObj[coordinate];
+                square.classList.remove('legal');
+            }
 
+            const from = this.#squaresMap.get(pieceDiv.parentElement as HTMLDivElement);
+            if (!from) return;
+            this.#squaresObj[from].classList.remove('active');
             const hoveredSquare = document.elementsFromPoint(e.clientX, e.clientY)
                 .find(el => el instanceof HTMLDivElement && this.#squaresMap.has(el));
             if (!hoveredSquare) return;
-
-            const from = this.#squaresMap.get(pieceDiv.parentElement as HTMLDivElement);
             const to = this.#squaresMap.get(hoveredSquare as HTMLDivElement);
-            if (!from || !to) return;
-
-            this.#squaresObj[from].classList.remove('active');
-            for (const c of moveset || []) {
-                const square = this.#squaresObj[c];
-                square.classList.remove('legal');
-            }
+            if (!to) return;
             this.#tryMove(from, to);
         };
         pieceDiv.addEventListener('dragstart', (e) => e.preventDefault());
@@ -773,25 +848,34 @@ class ChessBoard extends HTMLElement {
         return pieceDiv;
     }
 
-    #updateDom(updatedFenReader: FenReader) {
-        const isEmptyBoard = this.fen === '';
+    #updateDom(fenReader: FenReader) {
+
+        const isEmptyBoard = !this.fen;
         const currentFenReader = new FenReader(isEmptyBoard ? FenReader.startingFen : this.fen);
-        const { activeColor, isCheck, isCheckmate } = updatedFenReader.gameState;
+
+        const { activeColor, isCheck, isCheckmate } = fenReader.gameState;
         for (const rank of '12345678') {
             for (const file of 'abcdefgh') {
                 const coordinate = `${file}${rank}`;
                 const square = this.#squaresObj[coordinate];
-                square.classList.remove('check');
+
+                square.classList.remove('check', 'checkmate');
                 const currentPiece = currentFenReader.getPieceAt(coordinate);
-                const updatedPiece = updatedFenReader.getPieceAt(coordinate);
+                const updatedPiece = fenReader.getPieceAt(coordinate);
                 if (isCheck && ((activeColor === 'w' && updatedPiece === 'K') || (activeColor === 'b' && updatedPiece === 'k'))) {
                     square.classList.add('check');
+                    if (isCheckmate) square.classList.add('checkmate');
                 }
+
                 if (currentPiece === updatedPiece && !isEmptyBoard) continue;
-                square.replaceChildren(updatedPiece ? this.#buildPiece(updatedPiece) : '')
+                square.replaceChildren(updatedPiece ? this.#buildPiece(updatedPiece) : '');
+
             }
         }
 
+        // const isCurrent = this.#fenArray.length - 1 === this.#currentlyViewingIndex;
+        // this.dataset.activeColor = isCurrent ? fenReader.activeColor : '';
+        // if (this.#isGameOver) this.dataset.activeColor = '';
     }
 
     #updateDataset(updatedFenReader: FenReader) {
@@ -800,19 +884,20 @@ class ChessBoard extends HTMLElement {
         if (this.#isGameOver) this.dataset.activeColor = '';
     }
 
-    #promotionDialog(): Promise<'Q' | 'R' | 'N' | 'B'> {
-        return new Promise(resolve => {
-            const result = prompt('?');
-            if (result === 'Q' || result === 'R' || result === 'N' || result === 'B') resolve(result);
-            resolve('Q');
-        });
-    }
+    async #commitNewMove(fenReader: FenReader) {
+        const gameState = fenReader.gameState;
 
-    async #commitNewMove(updatedFenReader: FenReader) {
-        const fen = updatedFenReader.fen;
-        const gameState = updatedFenReader.gameState;
+        const piecePlacement = fenReader.piecePlacement;
+        this.#threeFoldRepetitionCounter[piecePlacement] ??= 0;
+        this.#threeFoldRepetitionCounter[piecePlacement] += 1;
+        const isThreefoldRepetition = this.#threeFoldRepetitionCounter[piecePlacement] >= 3;
 
-        this.#fenArray.push(fen);
+        this.#fenArray.push(fenReader.fen);
+
+        const isGameOver = gameState.isCheckmate || gameState.isStalemate ||
+            gameState.isInsufficientMaterial || gameState.is50MoveRule ||
+            isThreefoldRepetition;
+
 
         if (gameState.isCheckmate) {
             alert('Game over: Checkmate');
@@ -829,54 +914,79 @@ class ChessBoard extends HTMLElement {
             return this.#gameOver('sm');
         }
 
-        const piecePlacement = updatedFenReader.piecePlacement;
-        if (!this.#threeFoldRepetitionCounter[piecePlacement]) this.#threeFoldRepetitionCounter[piecePlacement] = 0;
-        this.#threeFoldRepetitionCounter[piecePlacement] += 1;
-        if (this.#threeFoldRepetitionCounter[piecePlacement] >= 3) {
-            // Draw
-            alert('Draw: Threefold repetition');
-            return this.#gameOver('3fr');
-        }
-
         if (gameState.is50MoveRule) {
             alert('Draw: Fifty move rule');
             return this.#gameOver('50mr');
         }
+        this.#updateDataset(fenReader);
 
-        this.#updateDataset(updatedFenReader);
     }
 
     #gameOver(result: string) {
         this.#isGameOver = true;
     }
+
+    #promotionDialog(color: 'w' | 'b') {
+        const { promise, resolve } = Promise.withResolvers<'Q' | 'R' | 'B' | 'N'>();
+        const promotionDialog = document.createElement('dialog');
+        promotionDialog.className = 'promote'
+        promotionDialog.addEventListener('cancel', () => {
+            promotionDialog.remove();
+            resolve('Q')
+        });
+        for (let p of 'QRBN') {
+            const pieceButton = document.createElement('button');
+            pieceButton.type = 'button';
+            pieceButton.className = color;
+            if (color === 'b') p = p.toLowerCase();
+            pieceButton.textContent = this.#pieceSymbols[p];
+            pieceButton.addEventListener('click', () => {
+                promotionDialog.close();
+                promotionDialog.remove();
+                resolve(p as 'Q' | 'R' | 'B' | 'N');
+            });
+            promotionDialog.append(pieceButton);
+        }
+        this.append(promotionDialog);
+        promotionDialog.showModal();
+        return promise;
+    }
+
+    async loadGame(game: { from: string, to: string }[]) {
+        //this.newGame();
+
+        // Promotion breaks. This type of notation might not work for that, it's too simple.
+        // It does work perfectly except for promotion. That's the only thing that can't be inferred.
+        // Real notation would be enough information, but parsing that is actually more complicated
+        // Since 1.Nf3 etc does not indicate the "from" square, we would have to derive it
+        // FenReader class should be able to do that, though maybe a GameParser class or something would be appropriate
+        // Store an array of FenReaders? If you have the previous FenReader you can narrow down what moved to e4, etc.
+        // Though seems pretty inefficient, you'd be grabbing every move from everything.
+        // if color is white, if first character is capitalized k/q/r/b/n/else (pawn).
+        // Check all instances of that piece.
+        // Find the one that can move there. May receive multiple, though the correct notation should have it
+
+        // Maybe I should create notation before creating a parser for it. Maybe they are the same class.
+        // console.log(game.length);
+        // game.forEach((move, i) => {
+
+        //     const render = i === game.length - 2;
+        //     this.#tryMove(move.from, move.to, render);
+        // })
+
+        // isPromotion is never true when doing this?
+        // for (const { from, to } of game) {
+        //     // trymove parameter that doesn't render until the end
+        //     const result = await this.#tryMove(from, to);
+        //     //if (!result) throw new Error('Error loading game');
+        // }
+    }
+}
+
+class GameParser {
+
 }
 
 customElements.define('chess-board', ChessBoard);
-const x = new ChessBoard();
+const x = document.createElement('chess-board')
 document.body.replaceChildren(x);
-
-
-(() => {
-    const div = document.createElement('div');
-    div.style.display = 'grid';
-    div.style.gridTemplateColumns = '1fr 1fr';
-    div.style.gap = '2em';
-    const button = document.createElement('button');
-    button.textContent = 'New Game';
-    button.onclick = () => x.newGame();
-    const input = document.createElement('input');
-    input.placeholder = 'Load FEN';
-    input.addEventListener('keyup', (e) => {
-        if (e.key === 'Enter') {
-            x.loadFen(input.value);
-        }
-    })
-    const back = document.createElement('button');
-    const forward = document.createElement('button');
-    back.textContent = '<';
-    forward.textContent = '>';
-    back.onclick = () => x.back();
-    forward.onclick = () => x.forward();
-    div.replaceChildren(button, input, back, forward);
-    document.body.append(div);
-})();

@@ -4,18 +4,8 @@
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chess</title>
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/stephenrwicks/wicks.css@main/wicks.css">    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/stephenrwicks/wicks.css@main/wicks.css"> -->
     <style>
-        * {
-            --squareSize: 5rem;
-            --pieceSize: 3.7rem;
-            --inset: calc(var(--squareSize)/18);
-            --lightSquare: #9f90b0;
-            --darkSquare: #7d4a8d;
-
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-
         body {
             margin: 0px;
             display: grid;
@@ -25,61 +15,144 @@
         }
 
         chess-board {
-            width: fit-content;
+            --squareSize: 5rem;
+            --pieceSize: 3.7rem;
+            --inset: calc(var(--squareSize)/18);
+            --lightSquare: #9f90b0;
+            --darkSquare: #7d4a8d;
+            box-sizing: border-box;
+            width: min-content;
             height: min-content;
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            gap: 0px;
-        }
 
-        .p {
-            font-size: var(--pieceSize);
-            user-select: none;
-        }
+            * {
+                font-size: 16px;
+                box-sizing: border-box;
+            }
 
-        .p.w {
-            color: white;
-        }
+            button, input {
+                display: grid;
+                place-items: center;
+                min-width: 4rem;
+                width: fit-content;
+                max-width: 100%;
+                text-wrap: balance;
+                user-select: none;
+                cursor: pointer;
+                background-color: var(--darkSquare);
+                color: white;
+                width: 100%;
+                height: 2.5rem;
+                padding: .4rem .6rem;
+                outline: 0;
+                border: 2px solid lightblue;
+                border-radius: 0;
 
-        .p.b {
-            color: black;
-        }
+                &:hover:not(:disabled), &:focus:not(:disabled) {
+                    border-color: darkblue;
+                }
 
-        chess-board[data-active-color="w"] .p.w,
-        chess-board[data-active-color="b"] .p.b {
-            cursor: pointer;
-        }
+                &:active:not(:disabled) {
+                    outline: 2px solid darkblue;
+                }
+            }
 
-        .p::selection {
-            background-color: transparent;
-        }
+            >.board {
+                /* box-shadow: 2px 2px 1rem #9f90b0; */
+                width: fit-content;
+                height: min-content;
+                display: grid;
+                grid-template-columns: repeat(8, 1fr);
+                gap: 0px;
 
-        chess-board>div {
-            display: grid;
-            place-items: center;
-            height: var(--squareSize);
-            width: var(--squareSize);
-            background-color: var(--lightSquare);
-        }
+                >div {
+                    display: grid;
+                    place-items: center;
+                    height: var(--squareSize);
+                    width: var(--squareSize);
+                    background-color: var(--lightSquare);
 
-        chess-board>div.d {
-            background-color: var(--darkSquare);
-        }
+                    &.d {
+                        background-color: var(--darkSquare);
+                    }
 
-        chess-board>div.legal {
-            box-shadow: inset 0 0 0 var(--inset) goldenrod;
-        }
+                    &.legal {
+                        box-shadow: inset 0 0 0 var(--inset) goldenrod;
+                    }
 
-        chess-board>div.active {
-            box-shadow: inset 0 0 0 var(--inset) hsla(120, 100%, 12.5%, 1);
-        }
+                    &.active {
+                        box-shadow: inset 0 0 0 var(--inset) hsla(120, 100%, 12.5%, 1);
+                    }
 
-        chess-board>div.check {
-            box-shadow: inset 0 0 0 var(--inset) red;
-        }
+                    &.check {
+                        box-shadow: inset 0 0 0 var(--inset) red;
+                    }
 
-        chess-board>div.checkmate {
-            background-color: red;
+                    &.checkmate {
+                        background-color: red;
+                    }
+                }
+
+                .p {
+                    font-size: var(--pieceSize);
+                    user-select: none;
+
+                    &::selection {
+                        background-color: transparent;
+                    }
+
+                    &.w {
+                        color: white;
+                    }
+
+                    &.b {
+                        color: black;
+                    }
+
+                    &:is([data-active-color="w"] .p.w, [data-active-color="b"] .p.b) {
+                        cursor: pointer;
+                    }
+
+                }
+            }
+
+
+            .promote[open] {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: calc(var(--squareSize) / 3);
+                padding: calc(var(--squareSize) / 3);
+                background-color: var(--lightSquare);
+                border: 5px solid var(--darkSquare);
+
+                &::backdrop {
+                    background-color: var(--lightSquare);
+                    opacity: .35;
+                }
+
+                button {
+                    color: white;
+                    width: var(--squareSize);
+                    height: var(--squareSize);
+                    background-color: var(--darkSquare);
+                    border-radius: 0px;
+                    border: 0px;
+                    font-size: var(--pieceSize);
+                    cursor: pointer;
+
+                    &.b {
+                        color: black;
+                    }
+                }
+            }
+
+
+
+            >.controls {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 2rem;
+                place-items: center;
+            }
         }
     </style>
 

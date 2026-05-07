@@ -1,7 +1,7 @@
 {
     "compileOnSave": true,
     "compilerOptions": {
-      "removeComments": false,
+      "removeComments": true,
       "target": "ESNext",
       "module": "ESNext",
       "lib": [
@@ -15,7 +15,7 @@
       "outDir": ""
     },
     "include": [
-      "*.ts", "../dragGame.ts/dragGame.ts",
+      "*.ts",
     ],
     "exclude": [
       "*.js"
