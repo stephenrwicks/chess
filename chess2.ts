@@ -120,16 +120,16 @@ class FenReader {
     /** Intermediate step that takes the current FenReader with a pawn on 1st/8th rank and returns a new FenReader */
     requestPromotion(promoteTo: 'Q' | 'R' | 'B' | 'N' = 'Q'): FenReader {
         const promotedPawnColor = this.inactiveColor;
+        const pawn = promotedPawnColor === 'w' ? 'P' : 'p';
         const rankIndex = promotedPawnColor === 'w' ? 0 : 7
         if (promotedPawnColor === 'b') promoteTo = promoteTo.toLowerCase() as typeof promoteTo;
         const ranks = this.piecePlacement.split('/');
         const rank = ranks[rankIndex];
-        const pawnIndex = rank.toLowerCase().indexOf('p');
-        if (pawnIndex < 0) throw new Error('promotion error');
         const expandedRank = this.#expandRank(rank);
+        const pawnIndex = expandedRank.indexOf(pawn);
+        if (pawnIndex < 0) throw new Error('promotion error');
         expandedRank[pawnIndex] = promoteTo;
-        const compressed = this.#compressRank(expandedRank);
-        ranks.splice(rankIndex, 1, compressed);
+        ranks[rankIndex] = this.#compressRank(expandedRank);
         const piecePlacement = ranks.join('/');
         const split = this.fen.split(' ');
         split[0] = piecePlacement;
@@ -149,6 +149,8 @@ class FenReader {
     }
 
     // Returns coordinates
+    // Maybe pass in a move and have this class parse the notation? Handle logic here
+    // Maybe notation of the last move is a property.
     getCoordinatesOfPieceTypeThatCanHitAnotherCoordinate(pieceType: PieceNotation, target: string) {
         const pieceCoordinates = this.findPiece(pieceType);
         const result = [];
@@ -158,6 +160,20 @@ class FenReader {
             };
         }
         return result;
+    }
+
+    getRandomLegalMove(): { from: string, to: string } {
+        const getRandom = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+        const pieces = this.activeColor === 'w' ? ['K', 'Q', 'R', 'B', 'N', 'P'] : ['k', 'q', 'r', 'b', 'n', 'p'];
+        const piece = getRandom(pieces) as PieceNotation;
+        const coordinates = this.findPiece(piece);
+        if (!coordinates.length) return this.getRandomLegalMove();
+        const from = getRandom(coordinates);
+        const moveset = this.getMoveset(from);
+        if (!moveset.size) return this.getRandomLegalMove();
+        const to = getRandom([...moveset]);
+        return { from, to };
+
     }
 
     #getIsCheck() {
@@ -557,15 +573,15 @@ class FenReader {
                 rankArray[0] = '0';
                 rankArray[3] = 'r';
             }
-            ranks.splice(8 - Number(fromRank), 1, this.#compressRank(rankArray));
+            ranks[8 - Number(fromRank)] = this.#compressRank(rankArray);
         }
         else {
             const fromRankArr = this.#expandRank(ranks[8 - Number(fromRank)]);
             const toRankArr = this.#expandRank(ranks[8 - Number(toRank)]);
             fromRankArr[fromFileIndex] = '0';
             toRankArr[toFileIndex] = movingPiece;
-            ranks.splice(8 - Number(fromRank), 1, this.#compressRank(fromRankArr));
-            ranks.splice(8 - Number(toRank), 1, this.#compressRank(toRankArr));
+            ranks[8 - Number(fromRank)] = this.#compressRank(fromRankArr);
+            ranks[8 - Number(toRank)] = this.#compressRank(toRankArr);
         }
 
         if (isEnPassant && enPassantTarget !== '-') {
@@ -575,7 +591,7 @@ class FenReader {
             const enPassantPawnRank = this.activeColor == 'w' ? '5' : '4';
             const enPassantRankArray = this.#expandRank(ranks[8 - Number(enPassantPawnRank)]);
             enPassantRankArray[enPassantFileIndex] = '0';
-            ranks.splice(8 - Number(enPassantPawnRank), 1, this.#compressRank(enPassantRankArray));
+            ranks[8 - Number(enPassantPawnRank)] =  this.#compressRank(enPassantRankArray);
         }
 
         const newPiecePlacement = ranks.join('/');
@@ -650,6 +666,7 @@ class ChessBoard extends HTMLElement {
     #pgnDiv = document.createElement('div');
 
     autoPromote = false;
+    playRandomBot = false;
 
     constructor() {
         super();
@@ -746,8 +763,25 @@ class ChessBoard extends HTMLElement {
 
     }
 
+    async doRandomGame() {
+        const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
+        this.newGame();
+        while (!this.#isGameOver) {
+            this.autoPromote = true;
+            const fenReader = new FenReader(this.fen);
+            const { from, to } = fenReader.getRandomLegalMove();
+            this.#tryMove(from, to);
+            await sleep();
+        }
+        this.autoPromote = false;
+    }
+
     newGame() {
         this.loadFen(FenReader.startingFen);
+    }
+
+    resign() {
+        this.#isGameOver = true;
     }
 
     goToPly(fenIndex: number) {
@@ -797,8 +831,6 @@ class ChessBoard extends HTMLElement {
 
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
-        console.log(notationForThisMove);
-
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
 
     }
@@ -809,7 +841,6 @@ class ChessBoard extends HTMLElement {
         let piece = fenReader.getPieceAt(from) as PieceNotation;
         const possible = fenReader.getCoordinatesOfPieceTypeThatCanHitAnotherCoordinate(piece, to);
         const hasMultiple = possible.length > 1;
-        console.log({possible})
         const isPawn = piece.toLowerCase() === 'p';
         const capture = fenReader.getPieceAt(to) ? 'x' : '';
 
