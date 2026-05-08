@@ -883,7 +883,7 @@ class ChessBoard extends HTMLElement {
         const color = uppercase === pieceNotation ? 'w' : 'b';
         const set = 'alpha'
         piece.className = `p ${color}`;
-        piece.src = `/${set}/${color}${uppercase}.svg`;
+        piece.src = `./${set}/${color}${uppercase}.svg`;
 
         let offsetX = 0;
         let offsetY = 0;
@@ -1037,7 +1037,7 @@ class ChessBoard extends HTMLElement {
             const set = 'alpha'
             pieceButton.type = 'button';
             pieceImg.className = `p`;
-            pieceImg.src = `/${set}/${color}${uppercase}.svg`;
+            pieceImg.src = `./${set}/${color}${uppercase}.svg`;
             pieceButton.replaceChildren(pieceImg);
             pieceButton.addEventListener('click', () => {
                 promotionDialog.close();
