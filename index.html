@@ -4,7 +4,6 @@
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chess</title>
-    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/stephenrwicks/wicks.css@main/wicks.css">    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/stephenrwicks/wicks.css@main/wicks.css"> -->
     <style>
         body {
             margin: 0px;
@@ -15,57 +14,70 @@
         }
 
         chess-board {
+            display: grid;
+            gap: .8rem;
             --squareSize: 5rem;
-            --pieceSize: 3.7rem;
+            --pieceSize: calc(var(--squareSize) / 1.1);
             --inset: calc(var(--squareSize)/18);
             --lightSquare: #9f90b0;
             --darkSquare: #7d4a8d;
             box-sizing: border-box;
-            width: fit-content;
+            width: min-content;
             height: min-content;
-            /* display: grid;
-            grid-template-columns: min-content 1fr; */
+            font: normal 16px Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif;
 
             * {
+                font: normal 16px Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif;
                 font-size: 16px;
                 box-sizing: border-box;
             }
 
-            button, input {
+            button,
+            input {
                 display: grid;
                 place-items: center;
-                min-width: 4rem;
-                width: fit-content;
+                width: 10rem;
+                height: 2rem;
                 max-width: 100%;
                 text-wrap: balance;
                 user-select: none;
                 cursor: pointer;
-                background-color: var(--darkSquare);
-                color: white;
-                width: 100%;
-                height: 2.5rem;
+                font-size: 80%;
                 padding: .4rem .6rem;
                 outline: 0;
-                border: 2px solid lightblue;
-                border-radius: 0;
+                border: 1px solid var(--darkSquare);
+                color: black;
+                background-color: lightgray;
+                transition: background-color .1s ease-out;
 
-                &:hover:not(:disabled), &:focus:not(:disabled) {
+                &:hover:not(:disabled),
+                &:focus:not(:disabled) {
                     border-color: darkblue;
+                    background-color: rgb(169, 169, 169)
                 }
 
                 &:active:not(:disabled) {
                     outline: 2px solid darkblue;
                 }
+
+                &:is(input) {
+                    cursor: initial;
+                    caret-color: darkblue;
+
+                    &:is(:active, :focus) {
+                        background-color: white !important;
+                    }
+                }
             }
 
             >.board {
-                /* box-shadow: 2px 2px 1rem #9f90b0; */
                 width: fit-content;
                 height: min-content;
                 grid-row: span 2;
                 display: grid;
                 grid-template-columns: repeat(8, 1fr);
                 gap: 0px;
+                margin: 0 2rem;
 
                 >div {
                     display: grid;
@@ -93,44 +105,39 @@
                     &.checkmate {
                         background-color: red;
                     }
+
                 }
 
                 .p {
-                    font-size: var(--pieceSize);
+                    display: block;
                     user-select: none;
+                    height: var(--pieceSize);
+                    width: var(--pieceSize);
 
-                    &::selection {
-                        background-color: transparent;
-                    }
-
-                    &.w {
-                        color: white;
-                    }
-
-                    &.b {
-                        color: black;
-                    }
-
-                    &:is([data-active-color="w"] .p.w, [data-active-color="b"] .p.b) {
+                    &:is([data-active-color="w"] .w, [data-active-color="b"] .b) {
                         cursor: pointer;
                     }
 
                 }
             }
 
-
-            .promote[open] {
+            dialog[open] {
                 display: grid;
-                grid-template-columns: 1fr 1fr;
                 gap: calc(var(--squareSize) / 3);
                 padding: calc(var(--squareSize) / 3);
-                background-color: var(--lightSquare);
+                background-color: antiquewhite;
                 border: 5px solid var(--darkSquare);
+                color: black;
+                font-size: 16px;
 
                 &::backdrop {
                     background-color: var(--lightSquare);
                     opacity: .35;
                 }
+            }
+
+            .promote[open] {
+                grid-template-columns: 1fr 1fr;
 
                 button {
                     color: white;
@@ -151,16 +158,52 @@
             >.panel {
                 display: grid;
                 place-items: center;
-                padding: calc(var(--squareSize)/4);
             }
 
 
 
             >.controls {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: calc(var(--squareSize)/4);
-                place-items: center;
+                width: fit-content;
+                display: contents;
+
+                summary {
+                    display: block;
+                    font-size: 170%;
+                    color: darkblue;
+                    cursor: pointer;
+
+                    text-align: center;
+                    border: 1px solid darkblue;
+                    border-radius: .3rem;
+                    width: fit-content;
+                    justify-self: center;
+                    padding: .2rem;
+                    background-color: mintcream;
+                    transition: background-color .1s ease-in-out;
+
+                    &:hover {
+                        background-color: rgb(172, 255, 214);
+                    }
+
+
+                }
+
+                &[open] summary {
+                    background-color: rgb(172, 255, 214);
+                }
+
+                &[open]::details-content {
+                    border: 1px solid black;
+                    block-size: auto;
+                    content-visibility: visible;
+                    min-height: 5rem;
+                    padding: 1rem;
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    justify-content: center;
+                    gap: .3rem;
+                    background-color: mintcream;
+                }
             }
         }
     </style>
@@ -168,7 +211,7 @@
 </head>
 
 <body>
-    <script src="chess2.js"></script>
+    <script src="chess.js"></script>
 </body>
 
 </html>
