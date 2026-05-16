@@ -32,43 +32,7 @@
                 box-sizing: border-box;
             }
 
-            button,
-            input {
-                display: grid;
-                place-items: center;
-                width: 10rem;
-                height: 2rem;
-                max-width: 100%;
-                text-wrap: balance;
-                user-select: none;
-                cursor: pointer;
-                font-size: 80%;
-                padding: .4rem .6rem;
-                outline: 0;
-                border: 1px solid var(--darkSquare);
-                color: black;
-                background-color: lightgray;
-                transition: background-color .1s ease-out;
 
-                &:hover:not(:disabled),
-                &:focus:not(:disabled) {
-                    border-color: darkblue;
-                    background-color: rgb(169, 169, 169)
-                }
-
-                &:active:not(:disabled) {
-                    outline: 2px solid darkblue;
-                }
-
-                &:is(input) {
-                    cursor: initial;
-                    caret-color: darkblue;
-
-                    &:is(:active, :focus) {
-                        background-color: white !important;
-                    }
-                }
-            }
 
             >.board {
                 width: fit-content;
@@ -158,20 +122,72 @@
             >.panel {
                 display: grid;
                 place-items: center;
+
+                .notation-button {
+                    background-color: unset;
+                    width: min-content;
+                    border: 0px;
+                    padding: 0px;
+                }
+
+            }
+
+            .pgn {
+                display: flex;
+                flex-flow: row wrap;
+                min-height: 2rem;
+                gap: .2rem;
+                align-items: center;
             }
 
 
 
-            >.controls {
+            >details.controls {
                 width: fit-content;
                 display: contents;
+
+                button,
+                input {
+                    display: grid;
+                    place-items: center;
+                    width: 10rem;
+                    height: 2rem;
+                    max-width: 100%;
+                    text-wrap: balance;
+                    user-select: none;
+                    cursor: pointer;
+                    font-size: 80%;
+                    padding: .4rem .6rem;
+                    outline: 0;
+                    border: 1px solid var(--darkSquare);
+                    color: black;
+                    background-color: lightgray;
+                    transition: background-color .1s ease-out;
+
+                    &:hover:not(:disabled),
+                    &:focus:not(:disabled) {
+                        border-color: darkblue;
+                        background-color: rgb(169, 169, 169)
+                    }
+
+                    &:active:not(:disabled) {
+                        outline: 2px solid darkblue;
+                    }
+
+                    &:is(input) {
+                        cursor: initial;
+                        caret-color: darkblue;
+
+                        &:is(:active, :focus) {
+                            background-color: white !important;
+                        }
+                    }
+                }
 
                 summary {
                     display: block;
                     font-size: 170%;
-                    color: darkblue;
                     cursor: pointer;
-
                     text-align: center;
                     border: 1px solid darkblue;
                     border-radius: .3rem;

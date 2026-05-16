@@ -1,3 +1,14 @@
+// Play bot
+// Resign button
+// Flip board
+// Generate notation - In progress
+// Buttons enabling/disabling
+// Load game
+// Load FEN UI
+// Responsive UI
+// Change piece set
+// Change board color/size
+
 type Direction = 'up' | 'upright' | 'right' | 'downright' | 'down' | 'downleft' | 'left' | 'upleft';
 type PieceNotation = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p';
 
@@ -19,6 +30,7 @@ class FenReader {
     #halfMoveClock = '';
     #fullMoveNumber = '';
     #isPromotion: boolean;
+    #whitePieces = new Set(['K', 'Q', 'R', 'B', 'N', 'P']);
 
     constructor(fen: string = FenReader.startingFen, isPromotion = false) {
         this.#fen = fen;
@@ -109,7 +121,7 @@ class FenReader {
         if (from === to) return null;
         const piece = this.getPieceAt(from);
         if (!piece) return null;
-        const isWhitePiece = piece === piece.toUpperCase();
+        const isWhitePiece = this.#whitePieces.has(piece);
         if (isWhitePiece && this.#activeColor === 'b') return null;
         if (!isWhitePiece && this.#activeColor === 'w') return null;
         const moveset = this.getMoveset(from);
@@ -193,36 +205,45 @@ class FenReader {
     }
 
     #getIsInsufficientMaterial() {
-        let whiteBishops = 0;
-        let blackBishops = 0;
         let whiteKnights = 0;
         let blackKnights = 0;
-        for (const piece of Object.values(this.#coordinateObject)) {
+
+        let whiteHasLightSquareBishop = false;
+        let whiteHasDarkSquareBishop = false;
+        let blackHasLightSquareBishop = false;
+        let blackHasDarkSquareBishop = false;
+        for (const [coordinate, piece] of Object.entries(this.#coordinateObject)) {
             if (!piece) continue;
             // Any pawn, queen, or rook is enough to force mate.
             if (piece.toLowerCase() === 'p') return false;
             if (piece.toLowerCase() === 'q') return false;
             if (piece.toLowerCase() === 'r') return false;
-            if (piece === 'B') whiteBishops += 1;
-            if (piece === 'b') blackBishops += 1;
+            if (piece === 'B') {
+                const isDark = this.getIsDarkSquare(coordinate);
+                if (isDark) whiteHasDarkSquareBishop = true;
+                else whiteHasLightSquareBishop = true;
+            }
+            if (piece === 'b') {
+                const isDark = this.getIsDarkSquare(coordinate);
+                if (isDark) blackHasDarkSquareBishop = true;
+                else blackHasLightSquareBishop = true;
+            }
             if (piece === 'N') whiteKnights += 1;
             if (piece === 'n') blackKnights += 1;
         }
-        // Two bishops can force mate.
-        // This is probably wrong without checking the colors the bishops are on.
-        // If you underpromote to a second bishop it might be on the same color as the other one,
-        // in which case mate is not possible?
-        if (whiteBishops >= 2) return false;
-        if (blackBishops >= 2) return false;
+
         // A bishop and a knight can force mate.
-        if (whiteBishops >= 1 && whiteKnights >= 1) return false;
-        if (blackBishops >= 1 && blackKnights >= 1) return false;
+        if ((whiteHasLightSquareBishop || whiteHasDarkSquareBishop) && whiteKnights >= 1) return false;
+        if ((blackHasLightSquareBishop || blackHasDarkSquareBishop) && blackKnights >= 1) return false;
+
         // Technically two knights can mate, but they cannot force it.
-        // Implementations of this rule seem mixed.
-        // Here I make 3 knights the minimum to be sufficient. 
-        // 3 knights should be able to force mate (though I've never seen it)
-        if (whiteKnights >= 3) return false;
-        if (blackKnights >= 3) return false;
+        if (whiteKnights >= 2) return false;
+        if (blackKnights >= 2) return false;
+
+        // Two bishops can force mate, but they must be on opposite colors
+        if (whiteHasLightSquareBishop && whiteHasDarkSquareBishop) return false;
+        if (blackHasLightSquareBishop && blackHasDarkSquareBishop) return false;
+
         // If we got here, it's a draw
         return true;
     };
@@ -469,7 +490,7 @@ class FenReader {
         // Check moveset length for every piece of active color
         for (const [coordinate, piece] of Object.entries(this.#coordinateObject)) {
             if (!piece) continue;
-            const isWhitePiece = piece.toUpperCase() === piece;
+            const isWhitePiece = this.#whitePieces.has(piece);
             if ((this.activeColor === 'b' && isWhitePiece)) continue;
             if (this.activeColor === 'w' && !isWhitePiece) continue;
             const moveset = this.getMoveset(coordinate);
@@ -483,7 +504,7 @@ class FenReader {
         // Color is the attacking color
         for (const [attackingCoordinate, piece] of Object.entries(this.#coordinateObject)) {
             if (!piece) continue;
-            const isWhite = piece.toUpperCase() === piece;
+            const isWhite = this.#whitePieces.has(piece);
             if ((color === 'b' && isWhite)) continue;
             if (color === 'w' && !isWhite) continue;
             const p = piece.toLowerCase();
@@ -524,7 +545,7 @@ class FenReader {
 
         const isWhiteCastleKingside = movingPiece === 'K' && from === 'e1' && to === 'g1';
         const isWhiteCastleQueenside = movingPiece === 'K' && from === 'e1' && to === 'c1';
-        const isBlackCastleKingside = movingPiece === 'k' && from === 'e8' && to === 'g1';
+        const isBlackCastleKingside = movingPiece === 'k' && from === 'e8' && to === 'g8';
         const isBlackCastleQueenside = movingPiece === 'k' && from === 'e8' && to === 'c8';
         const isEnPassant =
             (this.activeColor === 'w' && movingPiece === 'P' && to === enPassantTarget) ||
@@ -553,8 +574,11 @@ class FenReader {
 
         if (changeTurns) {
             activeColor = activeColor === 'w' ? 'b' : 'w';
-            halfMoveClock = shouldReset50MoveClock ? '0' : String(Number(halfMoveClock) + 1);
-            if (this.activeColor === 'b') fullMoveNumber = String(Number(fullMoveNumber) + 1);
+            if (this.activeColor === 'b') {
+                fullMoveNumber = String(Number(fullMoveNumber) + 1);
+                halfMoveClock = String(Number(halfMoveClock) + 1);
+            }
+            if (shouldReset50MoveClock) halfMoveClock = '0';
         }
 
         // Modify the fen string
@@ -609,7 +633,7 @@ class FenReader {
     }
 
     /** Takes a fen rank string and normalizes it to 8 character array (adds zeros in place of numbers) */
-    #expandRank(rank: string) {
+    #expandRank(rank: string): string[] {
         let expandedString = '';
         for (const char of rank) {
             if (Number.isNaN(Number(char))) {
@@ -622,7 +646,7 @@ class FenReader {
         return arr;
     }
 
-    #compressRank(expandedRankArray: string[]) {
+    #compressRank(expandedRankArray: string[]): string {
         let rankString = '';
         let count = 0;
         for (const char of expandedRankArray) {
@@ -638,7 +662,7 @@ class FenReader {
         return rankString;
     }
 
-    getIsDarkSquare(coordinate: string) {
+    getIsDarkSquare(coordinate: string): boolean {
         const file = coordinate[0];
         const rank = coordinate[1];
         const fileIndex = 'abcdefgh'.indexOf(file);
@@ -653,22 +677,10 @@ class ChessBoard extends HTMLElement {
     #isInitialized = false;
     #squaresObj: Record<string, HTMLDivElement> = {};
     #squaresMap: Map<HTMLDivElement, string> = new Map();
-    #pieceSymbols: Record<string, string> = {
-        k: '♚',
-        q: '♛',
-        r: '♜',
-        b: '♝',
-        n: '♞',
-        p: '♟',
-        K: '♔',
-        Q: '♕',
-        R: '♖',
-        B: '♗',
-        N: '♘',
-        P: '♙',
-    };
     #threeFoldRepetitionCounter: Record<string, number> = {};
     #fenArray: string[] = []; // Game history
+    #notationArray: string[] = [];
+    #notationButtons: HTMLButtonElement[] = [];
     #currentlyViewingIndex = 0;
     #isGameOver = false;
     #backButton = document.createElement('button');
@@ -676,9 +688,9 @@ class ChessBoard extends HTMLElement {
     #goToStartButton = document.createElement('button');
     #goToEndButton = document.createElement('button');
     #takebackButton = document.createElement('button');
-    #moveNumberDiv = document.createElement('div');
     #fenDiv = document.createElement('div');
     #pgnDiv = document.createElement('div');
+
 
     autoPromote = false;
     playRandomBot = false;
@@ -716,10 +728,12 @@ class ChessBoard extends HTMLElement {
         newGameButton.addEventListener('click', () => this.newGame());
 
         const fenInput = document.createElement('input');
+        fenInput.type = 'text';
         fenInput.placeholder = 'Load FEN';
         fenInput.addEventListener('keyup', (e) => {
             if (e.key !== 'Enter') return;
             this.loadFen(fenInput.value);
+            fenInput.value = '';
         });
 
         this.#backButton.type = 'button';
@@ -745,10 +759,7 @@ class ChessBoard extends HTMLElement {
         const randomBotGameButton = document.createElement('button');
         randomBotGameButton.type = 'button';
         randomBotGameButton.textContent = 'Random bot game';
-        randomBotGameButton.addEventListener('click', () => {
-            this.doRandomGame();
-        });
-
+        randomBotGameButton.addEventListener('click', () => this.doRandomGame());
 
         controls.replaceChildren(
             summary,
@@ -764,6 +775,16 @@ class ChessBoard extends HTMLElement {
 
         const panel = document.createElement('div');
         panel.className = 'panel';
+
+        this.#pgnDiv.className = 'pgn';
+        // this.#pgnDiv.addEventListener('click', (e) => {
+        //     // Should work but destroying all buttons each time breaks this
+        //     if (!(e.target instanceof HTMLButtonElement)) return;
+        //     const buttons = ([...this.#pgnDiv.childNodes].filter(n => n instanceof HTMLButtonElement));
+        //     const button = e.target;
+        //     const index = buttons.indexOf(button);
+        //     this.goToPly(index + 1);
+        // });
 
         panel.replaceChildren(this.#fenDiv, this.#pgnDiv);
 
@@ -782,12 +803,16 @@ class ChessBoard extends HTMLElement {
 
     loadFen(fen: string) {
         this.#isGameOver = false;
-        this.#fenArray.length = 0;
+        this.#fenArray = [];
+        this.#notationArray = [];
+        this.#notationButtons = [];
         this.#currentlyViewingIndex = 0;
         this.#threeFoldRepetitionCounter = {};
         const fenReader = new FenReader(fen);
+
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
+        // this.#updateNotationButtons();
 
     }
 
@@ -842,37 +867,73 @@ class ChessBoard extends HTMLElement {
     takeback() {
         if (this.#fenArray.length < 2) return;
         this.#fenArray.pop();
+        this.#notationArray.pop();
         this.goToEnd();
     }
 
     async #tryMove(from: string, to: string) {
         const current = new FenReader(this.fen);
-        const notationForThisMove = this.#getNotation(from, to, current);
+
         let fenReader = current.requestMove(from, to);
-        if (fenReader === null) return;
+        if (fenReader === null) return; // Illegal move
 
         if (fenReader.isPromotion) {
+            // Promotion, replace the fenReader with an updated one
             const promoteTo = this.autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
             fenReader = fenReader.requestPromotion(promoteTo);
             if (fenReader === null) return;
         }
 
+        const notationForThisMove = this.#getNotation(from, to, current, fenReader);
+        this.#notationArray.push(notationForThisMove);
+
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
+        // this.#updateNotationButtons();
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
 
     }
 
-    #getNotation(from: string, to: string, fenReader: FenReader): string {
-        const file = from[0];
-        const rank = from[1];
-        let piece = fenReader.getPieceAt(from) as PieceNotation;
-        const possible = fenReader.getCoordinatesOfPieceTypeThatCanHitAnotherCoordinate(piece, to);
-        const hasMultiple = possible.length > 1;
-        const isPawn = piece.toLowerCase() === 'p';
-        const capture = fenReader.getPieceAt(to) ? 'x' : '';
+    #getNotation(from: string, to: string, currentFenReader: FenReader, newFenReader: FenReader): string {
+        // This method doesn't really belong here since we are interpreting the FEN.
+        // Could be a property of FenReader passed into the constructor, just empty if it's starting fen,
+        // derived in the "generate" method at the end
+        // or maybe return an object there {fenreader, notation}
+        const fromFile = from[0];
+        const fromRank = from[1];
+        const toFile = to[0];
+        const toRank = to[1];
+        let piece = currentFenReader.getPieceAt(from);
+        if (!piece) return 'Error';
+        const isCapture = !!currentFenReader.getPieceAt(to);
+        const { isCheck, isCheckmate } = newFenReader.gameState;
+        const checkString = isCheckmate ? '#' : isCheck ? '+' : '';
+        const isCastleKingside = piece.toLowerCase() === 'k' && fromFile === 'e' && toFile === 'g';
+        const isCastleQueenside = piece.toLowerCase() === 'k' && fromFile === 'e' && toFile === 'c';
 
-        return `${piece.toUpperCase()}${file}${capture}${to}`;
+        if (isCastleKingside) return `O-O${checkString}`;
+        if (isCastleQueenside) return `O-O-O${checkString}`;
+
+        if (piece.toLowerCase() === 'p') {
+            const isPromotion = toRank === '1' || toRank === '8';
+            const promotionString = isPromotion ? `=${newFenReader.getPieceAt(to)?.toUpperCase()}` : '';
+            if (isCapture) {
+                // This is correct for en passant as well
+                return `${fromFile}x${to}${promotionString}${checkString}`;
+            }
+            return `${to}${promotionString}${checkString}`;
+        }
+        const possibilities = currentFenReader.getCoordinatesOfPieceTypeThatCanHitAnotherCoordinate(piece, to);
+
+        if (possibilities.length > 1) {
+            return 'multiple';
+        }
+
+        if (isCapture) {
+            return `${piece.toUpperCase()}x${to}${checkString}`;
+        }
+
+        return `${piece.toUpperCase()}${to}${checkString}`;
     }
 
     /** Piece factory function. We don't care about keeping pieces in state.
@@ -891,6 +952,7 @@ class ChessBoard extends HTMLElement {
         let moveset: Set<string> | null = null;
 
         const handleDown = (e: PointerEvent) => {
+            e.preventDefault();
             if (this.#isGameOver) return;
             if (!this.isCurrent) return;
             const from = this.#squaresMap.get(piece.parentElement as HTMLDivElement);
@@ -943,6 +1005,28 @@ class ChessBoard extends HTMLElement {
         return piece;
     }
 
+    // #updateNotationButtons() {
+    //     if (this.#notationButtons.length > this.#notationArray.length) {
+    //         console.log('a');
+    //         this.#notationButtons.length = this.#notationArray.length;
+    //     }
+    //     this.#notationArray.forEach((ply, i) => {
+    //         if (this.#notationButtons[i]) return;
+    //         if (i % 2 === 0) {
+    //             this.#pgnDiv.append(`${(i + 2) / 2}. `);
+    //         }
+    //         const button = document.createElement('button');
+    //         button.type = 'button';
+    //         button.textContent = ply;
+    //         button.addEventListener('click', () => {
+    //             this.goToPly(i + 1);
+    //         });
+    //         button.className = 'notation-button';
+    //         this.#notationButtons.push(button);
+    //         this.#pgnDiv.append(button);
+    //     });
+    // }
+
     #updateDom(fenReader: FenReader) {
 
         const isEmptyBoard = !this.fen;
@@ -969,15 +1053,27 @@ class ChessBoard extends HTMLElement {
         }
 
         this.#fenDiv.textContent = fenReader.fen;
-        this.#pgnDiv.textContent = `Move ${fenReader.fullMoveNumber}`;
 
+        this.#pgnDiv.replaceChildren();
+        this.#notationArray.forEach((ply, i) => {
+            if (i % 2 === 0) {
+                this.#pgnDiv.append(`${(i + 2) / 2}. `);
+            }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = ply;
+            button.addEventListener('click', () => {
+                this.goToPly(i + 1);
+            });
+            button.className = 'notation-button';
+            this.#pgnDiv.append(button);
+        });
     }
 
     #updateDataset(updatedFenReader: FenReader) {
         const isCurrent = this.#fenArray.length - 1 === this.#fenArray.indexOf(updatedFenReader.fen);
         this.dataset.activeColor = isCurrent ? updatedFenReader.activeColor : '';
         if (this.#isGameOver) this.dataset.activeColor = '';
-        //this.#backButton.disabled = this.#currentlyViewingIndex < 1;
     }
 
     #commitNewMove(fenReader: FenReader) {
@@ -990,10 +1086,10 @@ class ChessBoard extends HTMLElement {
 
         this.#fenArray.push(fenReader.fen);
 
-        const isGameOver = gameState.isCheckmate || gameState.isStalemate ||
-            gameState.isInsufficientMaterial || gameState.is50MoveRule ||
-            isThreefoldRepetition;
-
+        if (isThreefoldRepetition) {
+            this.#messageDialog('Draw: Threefold repetition');
+            return this.#gameOver('3fr');
+        }
 
         if (gameState.isCheckmate) {
             this.#messageDialog('Game over: Checkmate');
