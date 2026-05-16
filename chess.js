@@ -680,7 +680,6 @@ class ChessBoard extends HTMLElement {
     #threeFoldRepetitionCounter = {};
     #fenArray = [];
     #notationArray = [];
-    #notationButtons = [];
     #currentlyViewingIndex = 0;
     #isGameOver = false;
     #backButton = document.createElement('button');
@@ -767,13 +766,13 @@ class ChessBoard extends HTMLElement {
     loadFen(fen) {
         this.#isGameOver = false;
         this.#fenArray = [];
-        this.#notationArray = [];
-        this.#notationButtons = [];
+        this.#clearNotation();
         this.#currentlyViewingIndex = 0;
         this.#threeFoldRepetitionCounter = {};
         const fenReader = new FenReader(fen);
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
+        this.#updateDataset(fenReader);
     }
     async doRandomGame() {
         const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
@@ -826,8 +825,8 @@ class ChessBoard extends HTMLElement {
         this.goToEnd();
     }
     async #tryMove(from, to) {
-        const current = new FenReader(this.fen);
-        let fenReader = current.requestMove(from, to);
+        const currentFenReader = new FenReader(this.fen);
+        let fenReader = currentFenReader.requestMove(from, to);
         if (fenReader === null)
             return;
         if (fenReader.isPromotion) {
@@ -836,10 +835,11 @@ class ChessBoard extends HTMLElement {
             if (fenReader === null)
                 return;
         }
-        const notationForThisMove = this.#getNotation(from, to, current, fenReader);
-        this.#notationArray.push(notationForThisMove);
+        const notation = this.#getNotation(from, to, currentFenReader, fenReader);
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
+        this.#updateDataset(fenReader);
+        this.#addNotation(notation);
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
     }
     #getNotation(from, to, currentFenReader, newFenReader) {
@@ -847,19 +847,20 @@ class ChessBoard extends HTMLElement {
         const fromRank = from[1];
         const toFile = to[0];
         const toRank = to[1];
-        let piece = currentFenReader.getPieceAt(from);
+        const piece = currentFenReader.getPieceAt(from);
         if (!piece)
             return 'Error';
+        const p = piece.toUpperCase();
         const isCapture = !!currentFenReader.getPieceAt(to);
         const { isCheck, isCheckmate } = newFenReader.gameState;
         const checkString = isCheckmate ? '#' : isCheck ? '+' : '';
-        const isCastleKingside = piece.toLowerCase() === 'k' && fromFile === 'e' && toFile === 'g';
-        const isCastleQueenside = piece.toLowerCase() === 'k' && fromFile === 'e' && toFile === 'c';
+        const isCastleKingside = p === 'K' && fromFile === 'e' && toFile === 'g';
+        const isCastleQueenside = p === 'K' && fromFile === 'e' && toFile === 'c';
         if (isCastleKingside)
             return `O-O${checkString}`;
         if (isCastleQueenside)
             return `O-O-O${checkString}`;
-        if (piece.toLowerCase() === 'p') {
+        if (p === 'P') {
             const isPromotion = toRank === '1' || toRank === '8';
             const promotionString = isPromotion ? `=${newFenReader.getPieceAt(to)?.toUpperCase()}` : '';
             if (isCapture) {
@@ -867,14 +868,24 @@ class ChessBoard extends HTMLElement {
             }
             return `${to}${promotionString}${checkString}`;
         }
-        const possibilities = currentFenReader.getCoordinatesOfPieceTypeThatCanHitAnotherCoordinate(piece, to);
-        if (possibilities.length > 1) {
-            return 'multiple';
+        const piecesThatHitTarget = currentFenReader.getCoordinatesOfPieceTypeThatCanHitAnotherCoordinate(piece, to);
+        if (piecesThatHitTarget.length < 1) {
+            return 'error';
         }
+        else if (piecesThatHitTarget.length === 1) {
+            if (isCapture) {
+                return `${p}x${to}${checkString}`;
+            }
+            return `${p}${to}${checkString}`;
+        }
+        const hasOneOnSameRank = piecesThatHitTarget.some(c => c !== from && c[1] === fromRank);
+        const hasOneOnSameFile = piecesThatHitTarget.some(c => c !== from && c[0] === fromFile);
+        const fileString = !hasOneOnSameFile || hasOneOnSameRank ? fromFile : '';
+        const rankString = hasOneOnSameFile ? fromRank : '';
         if (isCapture) {
-            return `${piece.toUpperCase()}x${to}${checkString}`;
+            return `${p}${fileString}${rankString}x${to}${checkString}`;
         }
-        return `${piece.toUpperCase()}${to}${checkString}`;
+        return `${p}${fileString}${rankString}${to}${checkString}`;
     }
     #buildPiece(pieceNotation) {
         const piece = document.createElement('img');
@@ -901,7 +912,7 @@ class ChessBoard extends HTMLElement {
             piece.style.position = 'absolute';
             offsetX = piece.getBoundingClientRect().width / 2;
             offsetY = piece.getBoundingClientRect().height / 2;
-            const left = e.clientX - offsetX;
+            const left = e.clientX - offsetX + window.scrollX;
             const top = e.clientY - offsetY + window.scrollY;
             piece.style.left = `${left}px`;
             piece.style.top = `${top}px`;
@@ -915,7 +926,7 @@ class ChessBoard extends HTMLElement {
             }
         };
         const handleMove = (e) => {
-            const left = e.clientX - offsetX;
+            const left = e.clientX - offsetX + window.scrollX;
             const top = e.clientY - offsetY + window.scrollY;
             piece.style.left = `${left}px`;
             piece.style.top = `${top}px`;
@@ -945,6 +956,22 @@ class ChessBoard extends HTMLElement {
         piece.addEventListener('pointerdown', handleDown);
         return piece;
     }
+    #addNotation(notation) {
+        const index = this.#notationArray.length;
+        this.#notationArray.push(notation);
+        const button = document.createElement('button');
+        if (index % 2 === 0)
+            this.#pgnDiv.append(`${(index + 2) / 2}. `);
+        button.type = 'button';
+        button.className = 'notation-button';
+        button.textContent = notation;
+        button.addEventListener('click', () => this.goToPly(index + 1));
+        this.#pgnDiv.append(button);
+    }
+    #clearNotation() {
+        this.#notationArray = [];
+        this.#pgnDiv.replaceChildren();
+    }
     #updateDom(fenReader) {
         const isEmptyBoard = !this.fen;
         const currentFenReader = new FenReader(isEmptyBoard ? FenReader.startingFen : this.fen);
@@ -967,20 +994,6 @@ class ChessBoard extends HTMLElement {
             }
         }
         this.#fenDiv.textContent = fenReader.fen;
-        this.#pgnDiv.replaceChildren();
-        this.#notationArray.forEach((ply, i) => {
-            if (i % 2 === 0) {
-                this.#pgnDiv.append(`${(i + 2) / 2}. `);
-            }
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.textContent = ply;
-            button.addEventListener('click', () => {
-                this.goToPly(i + 1);
-            });
-            button.className = 'notation-button';
-            this.#pgnDiv.append(button);
-        });
     }
     #updateDataset(updatedFenReader) {
         const isCurrent = this.#fenArray.length - 1 === this.#fenArray.indexOf(updatedFenReader.fen);
@@ -1015,7 +1028,6 @@ class ChessBoard extends HTMLElement {
             this.#messageDialog('Draw: Fifty move rule');
             return this.#gameOver('50mr');
         }
-        this.#updateDataset(fenReader);
     }
     #gameOver(result) {
         this.#isGameOver = true;

@@ -17,18 +17,17 @@
             display: grid;
             gap: .8rem;
             --squareSize: 5rem;
-            --pieceSize: calc(var(--squareSize) / 1.1);
+            --pieceSize: calc(var(--squareSize) * .9);
             --inset: calc(var(--squareSize)/18);
             --lightSquare: #9f90b0;
             --darkSquare: #7d4a8d;
-            box-sizing: border-box;
             width: min-content;
             height: min-content;
             font: normal 16px Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif;
+            box-sizing: border-box;
 
             * {
                 font: normal 16px Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif;
-                font-size: 16px;
                 box-sizing: border-box;
             }
 
@@ -37,7 +36,6 @@
             >.board {
                 width: fit-content;
                 height: min-content;
-                grid-row: span 2;
                 display: grid;
                 grid-template-columns: repeat(8, 1fr);
                 gap: 0px;
