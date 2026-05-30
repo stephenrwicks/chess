@@ -8,19 +8,24 @@
         body {
             margin: 0px;
             display: grid;
-            place-items: center;
+            justify-items: center;
             height: 100vh;
             background-color: antiquewhite;
         }
 
         chess-board {
-            display: grid;
-            gap: .8rem;
-            --squareSize: 5rem;
-            --pieceSize: calc(var(--squareSize) * .9);
+
+            --unit: min(1vw, 1vh);
+            --squareSize: min(calc(var(--unit) * 8), 5rem);
+            --pieceSize: calc(var(--squareSize) * 1);
             --inset: calc(var(--squareSize)/18);
             --lightSquare: #9f90b0;
             --darkSquare: #7d4a8d;
+
+            margin: var(--squareSize) 0px;
+            display: grid;
+            grid-template-columns: 1fr calc(var(--squareSize) * 4);
+            gap: .8rem;
             width: min-content;
             height: min-content;
             font: normal 16px Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif;
@@ -31,15 +36,12 @@
                 box-sizing: border-box;
             }
 
-
-
             >.board {
                 width: fit-content;
                 height: min-content;
                 display: grid;
                 grid-template-columns: repeat(8, 1fr);
                 gap: 0px;
-                margin: 0 2rem;
 
                 >div {
                     display: grid;
@@ -94,7 +96,7 @@
 
                 &::backdrop {
                     background-color: var(--lightSquare);
-                    opacity: .35;
+                    opacity: .55;
                 }
             }
 
@@ -118,105 +120,100 @@
             }
 
             >.panel {
+                height: calc(var(--squareSize) * 8);
+                padding-top: 2vh;
+                display: flex;
+                flex-flow: column nowrap;
+                gap: 2rem;
+
+
+            }
+
+            .fen-div {
+                &::before {
+                    font-size: 1rem;
+                    display: block;
+                    content: "📌 Forsyth–Edwards Notation: ";
+                }
+
+                font-size: .8rem;
+            }
+
+            .notation {
+                flex-grow: 1;
+                overflow: auto;
+
+                >div {
+                    display: grid;
+                    gap: var(--squareSize);
+                    grid-template-columns: min-content 1fr 1fr;
+                    min-height: 1.5rem;
+                    gap: .2rem;
+                    align-items: center;
+
+                    button {
+                        background-color: unset;
+                        border: 0px;
+                        padding: 0px;
+                    }
+                }
+            }
+
+            .controls {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: .1rem;
+
+                button {
+                    width: auto;
+                }
+
+            }
+
+            @media (max-width: 768px) {
+                --squareSize: 12vw;
+                grid-template-columns: 1fr;
+
+                .panel {
+                    height: auto;
+                }
+            }
+
+
+            button,
+            input {
                 display: grid;
                 place-items: center;
+                height: 2rem;
+                max-width: 100%;
+                text-wrap: balance;
+                user-select: none;
+                cursor: pointer;
+                font-size: .8rem;
+                padding: .4rem .6rem;
+                outline: 0;
+                border: 1px solid var(--darkSquare);
+                color: black;
+                background-color: lightgray;
+                transition: background-color .1s ease-out;
 
-                .notation-button {
-                    background-color: unset;
-                    width: min-content;
-                    border: 0px;
-                    padding: 0px;
+                &:hover:not(:disabled),
+                &:focus:not(:disabled) {
+                    border-color: darkblue;
+                    background-color: rgb(169, 169, 169)
                 }
 
-            }
-
-            .pgn {
-                display: flex;
-                flex-flow: row wrap;
-                min-height: 2rem;
-                gap: .2rem;
-                align-items: center;
-            }
-
-
-
-            >details.controls {
-                width: fit-content;
-                display: contents;
-
-                button,
-                input {
-                    display: grid;
-                    place-items: center;
-                    width: 10rem;
-                    height: 2rem;
-                    max-width: 100%;
-                    text-wrap: balance;
-                    user-select: none;
-                    cursor: pointer;
-                    font-size: 80%;
-                    padding: .4rem .6rem;
-                    outline: 0;
-                    border: 1px solid var(--darkSquare);
-                    color: black;
-                    background-color: lightgray;
-                    transition: background-color .1s ease-out;
-
-                    &:hover:not(:disabled),
-                    &:focus:not(:disabled) {
-                        border-color: darkblue;
-                        background-color: rgb(169, 169, 169)
-                    }
-
-                    &:active:not(:disabled) {
-                        outline: 2px solid darkblue;
-                    }
-
-                    &:is(input) {
-                        cursor: initial;
-                        caret-color: darkblue;
-
-                        &:is(:active, :focus) {
-                            background-color: white !important;
-                        }
-                    }
+                &:active:not(:disabled) {
+                    outline: 2px solid darkblue;
                 }
 
-                summary {
-                    display: block;
-                    font-size: 170%;
-                    cursor: pointer;
-                    text-align: center;
-                    border: 1px solid darkblue;
-                    border-radius: .3rem;
-                    width: fit-content;
-                    justify-self: center;
-                    padding: .2rem;
-                    background-color: mintcream;
-                    transition: background-color .1s ease-in-out;
+                &:is(input) {
+                    cursor: initial;
+                    caret-color: darkblue;
 
-                    &:hover {
-                        background-color: rgb(172, 255, 214);
+                    &:is(:active, :focus) {
+                        background-color: white !important;
                     }
-
-
-                }
-
-                &[open] summary {
-                    background-color: rgb(172, 255, 214);
-                }
-
-                &[open]::details-content {
-                    border: 1px solid black;
-                    block-size: auto;
-                    content-visibility: visible;
-                    min-height: 5rem;
-                    padding: 1rem;
-                    display: grid;
-                    grid-template-columns: repeat(4, 1fr);
-                    justify-content: center;
-                    gap: .3rem;
-                    background-color: mintcream;
                 }
             }
         }

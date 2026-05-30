@@ -201,14 +201,14 @@ class FenReader {
             if (piece.toLowerCase() === 'r')
                 return false;
             if (piece === 'B') {
-                const isDark = this.getIsDarkSquare(coordinate);
+                const isDark = this.#getIsDarkSquare(coordinate);
                 if (isDark)
                     whiteHasDarkSquareBishop = true;
                 else
                     whiteHasLightSquareBishop = true;
             }
             if (piece === 'b') {
-                const isDark = this.getIsDarkSquare(coordinate);
+                const isDark = this.#getIsDarkSquare(coordinate);
                 if (isDark)
                     blackHasDarkSquareBishop = true;
                 else
@@ -664,7 +664,7 @@ class FenReader {
             rankString += String(count);
         return rankString;
     }
-    getIsDarkSquare(coordinate) {
+    #getIsDarkSquare(coordinate) {
         const file = coordinate[0];
         const rank = coordinate[1];
         const fileIndex = 'abcdefgh'.indexOf(file);
@@ -688,7 +688,10 @@ class ChessBoard extends HTMLElement {
     #goToEndButton = document.createElement('button');
     #takebackButton = document.createElement('button');
     #fenDiv = document.createElement('div');
-    #pgnDiv = document.createElement('div');
+    #notationDiv = document.createElement('div');
+    #notationButtons = [];
+    #squareSizeInput = document.createElement('input');
+    dragToggle = document.createElement('input');
     autoPromote = false;
     playRandomBot = false;
     constructor() {
@@ -712,14 +715,8 @@ class ChessBoard extends HTMLElement {
             }
             dark = !dark;
         }
-        const controls = document.createElement('details');
+        const controls = document.createElement('div');
         controls.className = 'controls';
-        const summary = document.createElement('summary');
-        summary.textContent = '⚙️';
-        const newGameButton = document.createElement('button');
-        newGameButton.type = 'button';
-        newGameButton.textContent = 'New Game';
-        newGameButton.addEventListener('click', () => this.newGame());
         const fenInput = document.createElement('input');
         fenInput.type = 'text';
         fenInput.placeholder = 'Load FEN';
@@ -748,12 +745,87 @@ class ChessBoard extends HTMLElement {
         randomBotGameButton.type = 'button';
         randomBotGameButton.textContent = 'Random bot game';
         randomBotGameButton.addEventListener('click', () => this.doRandomGame());
-        controls.replaceChildren(summary, fenInput, newGameButton, this.#backButton, this.#forwardButton, this.#goToStartButton, this.#goToEndButton, this.#takebackButton, randomBotGameButton);
+        const pieceSizeInput = document.createElement('input');
+        pieceSizeInput.type = 'range';
+        pieceSizeInput.min = '5';
+        pieceSizeInput.max = '10';
+        this.style.setProperty('--pieceSize', `calc(var(--squareSize) * ${1})`);
+        pieceSizeInput.addEventListener('input', () => {
+            const val = Number(pieceSizeInput.value) / 10;
+            this.style.setProperty('--pieceSize', `calc(var(--squareSize) * ${val})`);
+        });
+        const mainButtons = document.createElement('div');
+        mainButtons.style.display = 'flex';
+        mainButtons.style.gap = '.4rem';
+        const newGameButton = document.createElement('button');
+        newGameButton.type = 'button';
+        newGameButton.textContent = 'New Game';
+        newGameButton.addEventListener('click', () => this.newGame());
+        const resignButton = document.createElement('button');
+        resignButton.type = 'button';
+        resignButton.textContent = 'Resign';
+        resignButton.addEventListener('click', () => this.resign());
+        const loadFenButton = document.createElement('button');
+        loadFenButton.type = 'button';
+        loadFenButton.textContent = 'Load FEN';
+        const getFen = () => {
+            const { promise, resolve } = Promise.withResolvers();
+            const dialog = document.createElement('dialog');
+            dialog.addEventListener('cancel', () => {
+                dialog.remove();
+                resolve(null);
+            });
+            const div = document.createElement('div');
+            div.style.display = 'grid';
+            div.style.gap = '.4rem';
+            const label = document.createElement('label');
+            label.textContent = 'Enter FEN';
+            label.htmlFor = 'fen-input';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = 'fen-input';
+            div.replaceChildren(label, input);
+            const buttonDiv = document.createElement('div');
+            buttonDiv.style.display = 'flex';
+            buttonDiv.style.justifyContent = 'end';
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.textContent = 'Cancel';
+            const form = document.createElement('form');
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                dialog.close();
+                dialog.remove();
+                resolve(input.value.trim());
+            });
+            form.replaceChildren(div);
+            dialog.replaceChildren(form);
+            this.append(dialog);
+            dialog.showModal();
+            return promise;
+        };
+        loadFenButton.addEventListener('click', async () => {
+            const fen = await getFen();
+            if (!fen)
+                return;
+            this.loadFen(fen);
+        });
+        mainButtons.replaceChildren(newGameButton, resignButton, loadFenButton);
+        controls.replaceChildren(this.#goToStartButton, this.#backButton, this.#forwardButton, this.#goToEndButton);
         const panel = document.createElement('div');
         panel.className = 'panel';
-        this.#pgnDiv.className = 'pgn';
-        panel.replaceChildren(this.#fenDiv, this.#pgnDiv);
-        this.replaceChildren(board, panel, controls);
+        this.#notationDiv.className = 'notation';
+        this.#notationDiv.addEventListener('click', (e) => {
+            if (!(e.target instanceof HTMLButtonElement))
+                return;
+            const index = this.#notationButtons.indexOf(e.target);
+            if (index < 0)
+                return;
+            this.goToPly(index + 1);
+        });
+        this.#fenDiv.className = 'fen-div';
+        panel.replaceChildren(mainButtons, controls, this.#notationDiv, this.#fenDiv);
+        this.replaceChildren(board, panel);
         this.newGame();
         this.#isInitialized = true;
     }
@@ -781,8 +853,8 @@ class ChessBoard extends HTMLElement {
             this.autoPromote = true;
             const fenReader = new FenReader(this.fen);
             const { from, to } = fenReader.getRandomLegalMove();
-            this.#tryMove(from, to);
             await sleep();
+            this.#tryMove(from, to);
         }
         this.autoPromote = false;
     }
@@ -822,6 +894,14 @@ class ChessBoard extends HTMLElement {
             return;
         this.#fenArray.pop();
         this.#notationArray.pop();
+        this.#notationButtons.pop();
+        const div = this.#notationDiv.lastElementChild;
+        if (!div)
+            return;
+        div.lastElementChild?.remove();
+        if (div.lastChild instanceof Text) {
+            div.remove();
+        }
         this.goToEnd();
     }
     async #tryMove(from, to) {
@@ -835,10 +915,10 @@ class ChessBoard extends HTMLElement {
             if (fenReader === null)
                 return;
         }
-        const notation = this.#getNotation(from, to, currentFenReader, fenReader);
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
         this.#updateDataset(fenReader);
+        const notation = this.#getNotation(from, to, currentFenReader, fenReader);
         this.#addNotation(notation);
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
     }
@@ -957,20 +1037,26 @@ class ChessBoard extends HTMLElement {
         return piece;
     }
     #addNotation(notation) {
-        const index = this.#notationArray.length;
         this.#notationArray.push(notation);
+        const index = this.#notationArray.length;
         const button = document.createElement('button');
-        if (index % 2 === 0)
-            this.#pgnDiv.append(`${(index + 2) / 2}. `);
         button.type = 'button';
-        button.className = 'notation-button';
         button.textContent = notation;
-        button.addEventListener('click', () => this.goToPly(index + 1));
-        this.#pgnDiv.append(button);
+        this.#notationButtons.push(button);
+        if (index % 2 === 1) {
+            const div = document.createElement('div');
+            const n = `${(index / 2) + .5}. `;
+            div.replaceChildren(n, button);
+            this.#notationDiv.append(div);
+        }
+        else {
+            this.#notationDiv.lastElementChild?.append(button);
+        }
     }
     #clearNotation() {
         this.#notationArray = [];
-        this.#pgnDiv.replaceChildren();
+        this.#notationButtons = [];
+        this.#notationDiv.replaceChildren();
     }
     #updateDom(fenReader) {
         const isEmptyBoard = !this.fen;
@@ -1076,6 +1162,8 @@ class ChessBoard extends HTMLElement {
     }
     async loadGame(game) {
     }
+}
+class ChessBot {
 }
 customElements.define('chess-board', ChessBoard);
 const x = document.createElement('chess-board');
