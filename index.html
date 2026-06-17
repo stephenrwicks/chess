@@ -170,16 +170,6 @@
 
             }
 
-            @media (max-width: 768px) {
-                --squareSize: 12vw;
-                grid-template-columns: 1fr;
-
-                .panel {
-                    height: auto;
-                }
-            }
-
-
             button,
             input {
                 display: grid;
@@ -207,15 +197,32 @@
                     outline: 2px solid darkblue;
                 }
 
-                &:is(input) {
+                &:is(input[type="text"]) {
                     cursor: initial;
                     caret-color: darkblue;
 
                     &:is(:active, :focus) {
-                        background-color: white !important;
+                        background-color: white;
                     }
                 }
             }
+
+
+            @media (max-width: 768px) {
+                --squareSize: 12vw;
+                grid-template-columns: 1fr;
+
+                .panel {
+                    height: auto;
+                }
+
+                .notation {
+                    display: flex;
+                    flex-flow: row wrap;
+                    gap: .5rem;
+                }
+            }
+
         }
     </style>
 

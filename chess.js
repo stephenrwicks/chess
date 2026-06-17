@@ -573,10 +573,10 @@ class FenReader {
         if (castlingRights === '')
             castlingRights = '-';
         let newEnpassantTarget = enPassantTarget;
-        if (movingPiece === 'P' && fromRank === '2') {
+        if (movingPiece === 'P' && fromRank === '2' && toRank === '4') {
             newEnpassantTarget = `${fromFile}3`;
         }
-        else if (movingPiece === 'p' && fromRank === '7') {
+        else if (movingPiece === 'p' && fromRank === '7' && toRank === '5') {
             newEnpassantTarget = `${fromFile}6`;
         }
         else {
@@ -690,8 +690,7 @@ class ChessBoard extends HTMLElement {
     #fenDiv = document.createElement('div');
     #notationDiv = document.createElement('div');
     #notationButtons = [];
-    #squareSizeInput = document.createElement('input');
-    dragToggle = document.createElement('input');
+    #drag = false;
     autoPromote = false;
     playRandomBot = false;
     constructor() {
@@ -977,6 +976,13 @@ class ChessBoard extends HTMLElement {
         let offsetX = 0;
         let offsetY = 0;
         let moveset = null;
+        const clearActiveStyle = () => {
+            piece.parentElement?.classList.remove('active');
+            for (const coordinate of moveset || []) {
+                const square = this.#squaresObj[coordinate];
+                square.classList.remove('legal');
+            }
+        };
         const handleDown = (e) => {
             e.preventDefault();
             if (this.#isGameOver)
@@ -989,15 +995,36 @@ class ChessBoard extends HTMLElement {
             const fenReader = new FenReader(this.fen);
             if (color !== fenReader.activeColor)
                 return;
-            piece.style.position = 'absolute';
-            offsetX = piece.getBoundingClientRect().width / 2;
-            offsetY = piece.getBoundingClientRect().height / 2;
-            const left = e.clientX - offsetX + window.scrollX;
-            const top = e.clientY - offsetY + window.scrollY;
-            piece.style.left = `${left}px`;
-            piece.style.top = `${top}px`;
-            window.addEventListener('pointermove', handleMove);
-            window.addEventListener('pointerup', handleUp, { once: true });
+            if (this.#drag) {
+                piece.style.position = 'absolute';
+                offsetX = piece.getBoundingClientRect().width / 2;
+                offsetY = piece.getBoundingClientRect().height / 2;
+                const left = e.clientX - offsetX + window.scrollX;
+                const top = e.clientY - offsetY + window.scrollY;
+                piece.style.left = `${left}px`;
+                piece.style.top = `${top}px`;
+                window.addEventListener('pointermove', handleMove);
+                window.addEventListener('pointerup', handleUp, { once: true });
+            }
+            else {
+                setTimeout(() => {
+                    this.addEventListener('pointerdown', (e) => {
+                        clearActiveStyle();
+                        let target = e.target;
+                        if (!(target instanceof HTMLElement))
+                            return;
+                        if (target.classList.contains('p')) {
+                            target = target.parentElement;
+                        }
+                        if (!(target instanceof HTMLDivElement))
+                            return;
+                        const to = this.#squaresMap.get(target);
+                        if (!to)
+                            return;
+                        this.#tryMove(from, to);
+                    }, { once: true });
+                }, 0);
+            }
             this.#squaresObj[from].classList.add('active');
             moveset = fenReader.getMoveset(from);
             for (const coordinate of moveset) {
@@ -1014,10 +1041,7 @@ class ChessBoard extends HTMLElement {
         const handleUp = (e) => {
             piece.removeAttribute('style');
             window.removeEventListener('pointermove', handleMove);
-            for (const coordinate of moveset || []) {
-                const square = this.#squaresObj[coordinate];
-                square.classList.remove('legal');
-            }
+            clearActiveStyle();
             const from = this.#squaresMap.get(piece.parentElement);
             if (!from)
                 return;

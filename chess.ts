@@ -563,10 +563,10 @@ class FenReader {
         if (castlingRights === '') castlingRights = '-';
 
         let newEnpassantTarget = enPassantTarget;
-        if (movingPiece === 'P' && fromRank === '2') {
+        if (movingPiece === 'P' && fromRank === '2' && toRank === '4') {
             newEnpassantTarget = `${fromFile}3`;
         }
-        else if (movingPiece === 'p' && fromRank === '7') {
+        else if (movingPiece === 'p' && fromRank === '7' && toRank === '5') {
             newEnpassantTarget = `${fromFile}6`;
         }
         else {
@@ -691,8 +691,7 @@ class ChessBoard extends HTMLElement {
     #fenDiv = document.createElement('div');
     #notationDiv = document.createElement('div');
     #notationButtons: HTMLButtonElement[] = [];
-    #squareSizeInput = document.createElement('input');
-    dragToggle = document.createElement('input');
+    #drag = false;
 
 
 
@@ -1054,6 +1053,14 @@ class ChessBoard extends HTMLElement {
 
         let moveset: Set<string> | null = null;
 
+        const clearActiveStyle = () => {
+            piece.parentElement?.classList.remove('active');
+            for (const coordinate of moveset || []) {
+                const square = this.#squaresObj[coordinate];
+                square.classList.remove('legal');
+            }
+        }
+
         const handleDown = (e: PointerEvent) => {
             e.preventDefault();
             if (this.#isGameOver) return;
@@ -1062,21 +1069,48 @@ class ChessBoard extends HTMLElement {
             if (!from) return;
             const fenReader = new FenReader(this.fen);
             if (color !== fenReader.activeColor) return;
-            piece.style.position = 'absolute';
-            offsetX = piece.getBoundingClientRect().width / 2;
-            offsetY = piece.getBoundingClientRect().height / 2;
-            const left = e.clientX - offsetX + window.scrollX;
-            const top = e.clientY - offsetY + window.scrollY;
-            piece.style.left = `${left}px`;
-            piece.style.top = `${top}px`;
-            window.addEventListener('pointermove', handleMove);
-            window.addEventListener('pointerup', handleUp, { once: true });
+
+            if (this.#drag) {
+                piece.style.position = 'absolute';
+                offsetX = piece.getBoundingClientRect().width / 2;
+                offsetY = piece.getBoundingClientRect().height / 2;
+                const left = e.clientX - offsetX + window.scrollX;
+                const top = e.clientY - offsetY + window.scrollY;
+                piece.style.left = `${left}px`;
+                piece.style.top = `${top}px`;
+                window.addEventListener('pointermove', handleMove);
+                window.addEventListener('pointerup', handleUp, { once: true });
+            }
+            else {
+                // this.#squaresObj[from].addEventListener('pointerdown', () => {
+                //     clearLegalStyle();
+                //     moveset = null;
+                // }, {once: true});
+                setTimeout(() => {
+                    this.addEventListener('pointerdown', (e) => {
+                        clearActiveStyle();
+                        let target = e.target;
+                        if (!(target instanceof HTMLElement)) return;
+                        if (target.classList.contains('p')) {
+                            target = target.parentElement;
+                        }
+                        if (!(target instanceof HTMLDivElement)) return;
+                        const to = this.#squaresMap.get(target);
+                        if (!to) return;
+                        this.#tryMove(from, to);
+
+                    }, { once: true });
+                }, 0);
+
+            }
+
             this.#squaresObj[from].classList.add('active');
             moveset = fenReader.getMoveset(from);
             for (const coordinate of moveset) {
                 const square = this.#squaresObj[coordinate];
                 square.classList.add('legal');
             }
+
         };
         const handleMove = (e: PointerEvent) => {
             const left = e.clientX - offsetX + window.scrollX;
@@ -1087,10 +1121,7 @@ class ChessBoard extends HTMLElement {
         const handleUp = (e: PointerEvent) => {
             piece.removeAttribute('style');
             window.removeEventListener('pointermove', handleMove);
-            for (const coordinate of moveset || []) {
-                const square = this.#squaresObj[coordinate];
-                square.classList.remove('legal');
-            }
+            clearActiveStyle();
 
             const from = this.#squaresMap.get(piece.parentElement as HTMLDivElement);
             if (!from) return;
@@ -1102,6 +1133,14 @@ class ChessBoard extends HTMLElement {
             if (!to) return;
             this.#tryMove(from, to);
         };
+
+        // const handleClick = (e: Event) => {
+        //     e.preventDefault();
+        //     if (this.#drag) return;
+        //     if (this.#isGameOver) return;
+        //     if (!this.isCurrent) return;
+        // };
+
         piece.addEventListener('dragstart', (e) => e.preventDefault());
         piece.addEventListener('mousedown', (e) => e.preventDefault());
         piece.addEventListener('pointerdown', handleDown);
