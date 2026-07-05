@@ -21,6 +21,7 @@
             --inset: calc(var(--squareSize)/18);
             --lightSquare: #9f90b0;
             --darkSquare: #7d4a8d;
+            --accentColor: darkblue;
 
             margin: var(--squareSize) 0px;
             display: grid;
@@ -34,6 +35,7 @@
             * {
                 font: normal 16px Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif;
                 box-sizing: border-box;
+                accent-color: var(--accentColor);
             }
 
             >.board {
@@ -142,6 +144,11 @@
             .notation {
                 flex-grow: 1;
                 overflow: auto;
+                padding: .5rem;
+
+                &:not(:empty) {
+                    outline: 1px solid lightgray;
+                }
 
                 >div {
                     display: grid;
@@ -170,8 +177,62 @@
 
             }
 
+            label {
+                display: block;
+                width: fit-content;
+                margin-bottom: .2em;
+            }
+
+            label:has(input[type="checkbox"]),
+            label:has(input[type="radio"]) {
+                margin: 0;
+                width: 100%;
+                display: grid;
+                align-items: center;
+                justify-items: start;
+                grid-template-columns: min-content 1fr;
+                gap: .5rem;
+                padding: .5rem;
+                cursor: pointer;
+                border-radius: 0;
+                user-select: none;
+
+                &:hover {
+                    outline: 1px solid var(--lightSquare);
+                }
+
+            }
+
+            fieldset {
+                padding: .5rem 0;
+                border: 0px;
+
+                legend {
+                    cursor: default;
+                    margin: 0;
+                    padding: 0;
+                }
+            }
+
+            input[type="radio"],
+            input[type="checkbox"] {
+                cursor: pointer;
+                height: 1.5rem;
+                width: 1.5rem;
+                accent-color: var(--secondary);
+
+                &:disabled {
+                    cursor: default;
+                }
+
+
+            }
+
+
             button,
-            input {
+            input[type="text"],
+            input[type="color"],
+            input[type="range"] {
                 display: grid;
                 place-items: center;
                 height: 2rem;
@@ -189,22 +250,35 @@
 
                 &:hover:not(:disabled),
                 &:focus:not(:disabled) {
-                    border-color: darkblue;
+                    border-color: var(--accentColor);
                     background-color: rgb(169, 169, 169)
                 }
 
                 &:active:not(:disabled) {
-                    outline: 2px solid darkblue;
+                    outline: 2px solid var(--accentColor);
                 }
 
-                &:is(input[type="text"]) {
-                    cursor: initial;
-                    caret-color: darkblue;
+                &:is(input) {
+                    caret-color: var(--accentColor);
 
                     &:is(:active, :focus) {
                         background-color: white;
                     }
+
+                    &[type="color"] {
+                        display: inline-block;
+                        aspect-ratio: 1/1;
+                        width: unset;
+                        cursor: pointer;
+                        padding: 0;
+                    }
+
+                    &[type="text"] {
+                        cursor: initial;
+                    }
+
                 }
+
             }
 
 

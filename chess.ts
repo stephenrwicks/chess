@@ -107,7 +107,6 @@ class FenReader {
     #isCheck: boolean | null = null;
     get isCheck(): boolean {
         if (this.#isCheck !== null) return this.#isCheck;
-        console.log('Determining check for ' + this.piecePlacement);
         const kingSquare = this.activeColor === 'w' ? this.whiteKingSquare : this.blackKingSquare;
         this.#isCheck = this.#getIsSquareAttacked(kingSquare);
         return this.#isCheck;
@@ -118,7 +117,7 @@ class FenReader {
         if (this.#whiteKingSquare !== null) return this.#whiteKingSquare;
         for (const [c, p] of Object.entries(this.coordinateObject)) {
             if (p === 'K') {
-                this.#whiteKingSquare === c;
+                this.#whiteKingSquare = c;
                 return c;
             }
         }
@@ -130,7 +129,7 @@ class FenReader {
         if (this.#blackKingSquare !== null) return this.#blackKingSquare;
         for (const [c, p] of Object.entries(this.coordinateObject)) {
             if (p === 'k') {
-                this.#blackKingSquare === c;
+                this.#blackKingSquare = c;
                 return c;
             }
         }
@@ -623,7 +622,6 @@ class FenReader {
      *  Used to see if we are getting out of or moving into check before moving */
     #detectCheck(from: string, to: string): boolean {
         const testFenReader = this.#generateNewFenReaderFromMove(from, to, false);
-        console.log('isCheck: ', testFenReader.isCheck);
         return testFenReader.isCheck;
     }
 
@@ -668,14 +666,15 @@ class FenReader {
         if (isBlackCastleQueenside || from === 'e8' || from === 'a8' || to === 'a8') castlingRights = castlingRights.replace('q', '');
         if (castlingRights === '') castlingRights = '-';
 
+        let newEnPassantTarget = enPassantTarget;
         if (movingPiece === 'P' && fromRank === '2' && toRank === '4') {
-            enPassantTarget = `${fromFile}3`;
+            newEnPassantTarget = `${fromFile}3`;
         }
         else if (movingPiece === 'p' && fromRank === '7' && toRank === '5') {
-            enPassantTarget = `${fromFile}6`;
+            newEnPassantTarget = `${fromFile}6`;
         }
         else {
-            enPassantTarget = '-';
+            newEnPassantTarget = '-';
         }
 
         if (changeTurns) {
@@ -721,18 +720,21 @@ class FenReader {
             ranks[8 - Number(toRank)] = this.#compressRank(toRankArr);
         }
 
-        if (isEnPassant && enPassantTarget !== '-') {
+
+        if (isEnPassant) {
             const enPassantFile = enPassantTarget[0];
             const enPassantFileIndex = 'abcdefgh'.indexOf(enPassantFile);
             // The pawn we capture will always be on rank 4 or 5
             const enPassantPawnRank = this.activeColor == 'w' ? '5' : '4';
+            console.log(enPassantPawnRank);
             const enPassantRankArray = this.#expandRank(ranks[8 - Number(enPassantPawnRank)]);
             enPassantRankArray[enPassantFileIndex] = '0';
             ranks[8 - Number(enPassantPawnRank)] = this.#compressRank(enPassantRankArray);
         }
 
         const newPiecePlacement = ranks.join('/');
-        const fen = `${newPiecePlacement} ${activeColor} ${castlingRights} ${enPassantTarget} ${halfMoveClock} ${fullMoveNumber}`;
+        console.log(newPiecePlacement);
+        const fen = `${newPiecePlacement} ${activeColor} ${castlingRights} ${newEnPassantTarget} ${halfMoveClock} ${fullMoveNumber}`;
 
         return new FenReader(fen, isPromotion);
     }
@@ -799,12 +801,14 @@ class ChessBoard extends HTMLElement {
     #fenDiv = document.createElement('div');
     #notationDiv = document.createElement('div');
     #notationButtons: HTMLButtonElement[] = [];
-    #drag = true;
+
+    // Assume we are probably on a phone or tablet if we are below this width on initialization
+    // So start with click-two-squares mode
+    #drag = window.innerWidth > 1024;
+
+    #autoPromote = false;
 
     #FenReaders: Record<string, FenReader> = {};
-
-    autoPromote = false;
-    playRandomBot = false;
 
     constructor() {
         super();
@@ -829,8 +833,6 @@ class ChessBoard extends HTMLElement {
 
         const controls = document.createElement('div');
         controls.className = 'controls';
-
-
 
         const fenInput = document.createElement('input');
         fenInput.type = 'text';
@@ -866,17 +868,6 @@ class ChessBoard extends HTMLElement {
         randomBotGameButton.textContent = 'Random bot game';
         randomBotGameButton.addEventListener('click', () => this.doRandomGame());
 
-        const pieceSizeInput = document.createElement('input');
-
-        pieceSizeInput.type = 'range';
-        pieceSizeInput.min = '5';
-        pieceSizeInput.max = '10';
-        this.style.setProperty('--pieceSize', `calc(var(--squareSize) * ${1})`);
-        pieceSizeInput.addEventListener('input', () => {
-            const val = Number(pieceSizeInput.value) / 10;
-            this.style.setProperty('--pieceSize', `calc(var(--squareSize) * ${val})`);
-        });
-
         const mainButtons = document.createElement('div');
         mainButtons.style.display = 'flex';
         mainButtons.style.gap = '.4rem';
@@ -895,76 +886,111 @@ class ChessBoard extends HTMLElement {
         loadFenButton.type = 'button';
         loadFenButton.textContent = 'Load FEN';
 
+        const pieceSizeDiv = document.createElement('div');
 
-        const getFen = () => {
-            const { promise, resolve } = Promise.withResolvers<string | null>();
-            const dialog = document.createElement('dialog');
-            dialog.addEventListener('cancel', () => {
-                dialog.remove();
-                resolve(null);
-            });
+        const pieceSizeLabel = document.createElement('label');
+        pieceSizeLabel.textContent = 'Piece Size';
+        pieceSizeLabel.htmlFor = 'chess-board-piece-size';
 
-            const div = document.createElement('div');
-            div.style.display = 'grid';
-            div.style.gap = '.4rem';
+        const pieceSizeInput = document.createElement('input');
+        pieceSizeInput.type = 'range';
+        pieceSizeInput.id = 'chess-board-piece-size';
+        pieceSizeInput.min = '5';
+        pieceSizeInput.max = '10';
+        this.style.setProperty('--pieceSize', `calc(var(--squareSize) * ${1})`);
+        pieceSizeInput.addEventListener('input', () => {
+            const val = Number(pieceSizeInput.value) / 10;
+            this.style.setProperty('--pieceSize', `calc(var(--squareSize) * ${val})`);
+        });
 
-            const label = document.createElement('label');
-            label.textContent = 'Enter FEN';
-            label.htmlFor = 'fen-input';
+        pieceSizeDiv.replaceChildren(pieceSizeLabel, pieceSizeInput);
 
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.id = 'fen-input';
+        const radioFieldset = document.createElement('fieldset');
+        const radioLegend = document.createElement('legend');
+        radioLegend.textContent = 'Move behavior';
 
-            div.replaceChildren(label, input);
+        const dragRadio = document.createElement('input');
+        dragRadio.type = 'radio';
+        dragRadio.name = 'chess-board-click-drag';
+        dragRadio.checked = this.#drag;
+        const dragLabel = document.createElement('label');
+        dragLabel.replaceChildren(dragRadio, 'Drag piece to move');
 
-            const buttonDiv = document.createElement('div');
-            buttonDiv.style.display = 'flex';
-            buttonDiv.style.justifyContent = 'end';
-            const cancel = document.createElement('button');
-            cancel.type = 'button';
-            cancel.textContent = 'Cancel';
-            cancel.addEventListener('click', () => {
-                dialog.close();
-                dialog.remove();
-                resolve(null);
-            })
-            buttonDiv.replaceChildren(cancel);
+        const clickRadio = document.createElement('input');
+        clickRadio.type = 'radio';
+        clickRadio.name = 'chess-board-click-drag';
+        clickRadio.checked = !this.#drag;
+        const clickLabel = document.createElement('label');
+        clickLabel.replaceChildren(clickRadio, 'Click two squares to move');
 
-            const form = document.createElement('form');
-            form.addEventListener('submit', (e) => {
-                e.preventDefault();
-                dialog.close();
-                dialog.remove();
-                resolve(input.value.trim());
-            });
+        radioFieldset.replaceChildren(radioLegend, dragLabel, clickLabel);
+        radioFieldset.addEventListener('change', () => {
+            this.#drag = dragRadio.checked;
+        });
 
-            form.replaceChildren(div, buttonDiv);
-            dialog.replaceChildren(form);
+        const autoPromoteCheckbox = document.createElement('input');
+        autoPromoteCheckbox.type = 'checkbox';
+        autoPromoteCheckbox.checked = this.#autoPromote;
+        const autoPromoteLabel = document.createElement('label');
+        autoPromoteLabel.replaceChildren(autoPromoteCheckbox, 'Auto-promote to Queen');
+        autoPromoteCheckbox.addEventListener('change', () => this.#autoPromote = autoPromoteCheckbox.checked);
 
-            this.append(dialog);
-            dialog.showModal();
-            return promise;
-        };
+        this.style.setProperty('--darkSquare', '#7d4a8d');
+        this.style.setProperty('--lightSquare', '#9f90b0');
+
+        const colorFieldset = document.createElement('fieldset');
+        const colorLegend = document.createElement('legend');
+        colorLegend.textContent = 'Board color';
+
+        const darkSquareInput = document.createElement('input');
+        darkSquareInput.type = 'color';
+        darkSquareInput.value = '#7d4a8d';
+        darkSquareInput.addEventListener('input', () => this.style.setProperty('--darkSquare', darkSquareInput.value));
+
+        const lightSquareInput = document.createElement('input');
+        lightSquareInput.type = 'color';
+        lightSquareInput.value = '#9f90b0';
+        lightSquareInput.addEventListener('input', () => this.style.setProperty('--lightSquare', lightSquareInput.value));
+
+        colorFieldset.replaceChildren(colorLegend, darkSquareInput, lightSquareInput);
+
+        const settingsButton = document.createElement('button');
+        settingsButton.type = 'button';
+        settingsButton.textContent = 'Settings';
+        settingsButton.addEventListener('click', () => settingsDialog.showModal());
+
+        const settingsDialog = document.createElement('dialog');
+
+        const settingsOk = document.createElement('button');
+        settingsOk.style.justifySelf = 'end';
+        settingsOk.type = 'button';
+        settingsOk.textContent = 'OK';
+        settingsOk.addEventListener('click', () => settingsDialog.close());
+
+
+        settingsDialog.replaceChildren(
+            radioFieldset,
+            autoPromoteLabel,
+            pieceSizeDiv,
+            colorFieldset,
+            settingsOk
+        );
 
         loadFenButton.addEventListener('click', async () => {
-            const fen = await getFen();
+            const fen = await this.#loadFenDialog();
             if (!fen) return;
             this.loadFen(fen);
         });
 
-        mainButtons.replaceChildren(newGameButton, resignButton, loadFenButton);
+        mainButtons.replaceChildren(newGameButton, resignButton, loadFenButton, settingsButton);
 
         controls.replaceChildren(
-            // pieceSizeInput,
-            // fenInput,
-            // newGameButton,
             this.#goToStartButton,
             this.#backButton,
             this.#forwardButton,
             this.#goToEndButton,
-            // this.#takebackButton,
-            // randomBotGameButton,
+            this.#takebackButton,
+            randomBotGameButton,
 
         );
 
@@ -984,7 +1010,7 @@ class ChessBoard extends HTMLElement {
 
         panel.replaceChildren(mainButtons, controls, this.#notationDiv, this.#fenDiv);
 
-        this.replaceChildren(board, panel)
+        this.replaceChildren(board, panel, settingsDialog)
         this.newGame();
         this.#isInitialized = true;
     }
@@ -1023,14 +1049,14 @@ class ChessBoard extends HTMLElement {
         const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
         this.newGame();
         while (!this.#isGameOver) {
-            this.autoPromote = true;
+            this.#autoPromote = true;
 
             const fenReader = this.#getFenReader(this.fen);
             const { from, to } = fenReader.getRandomLegalMove();
             await sleep();
             this.#tryMove(from, to);
         }
-        this.autoPromote = false;
+        this.#autoPromote = false;
     }
 
     newGame() {
@@ -1090,7 +1116,7 @@ class ChessBoard extends HTMLElement {
 
         if (fenReader.isPromotion) {
             // Promotion, replace the fenReader with an updated one
-            const promoteTo = this.autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
+            const promoteTo = this.#autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
             fenReader = fenReader.requestPromotion(promoteTo);
             if (fenReader === null) return;
         }
@@ -1125,9 +1151,10 @@ class ChessBoard extends HTMLElement {
         if (isCastleQueenside) return `O-O-O${checkString}`;
 
         if (p === 'P') {
+            const isEnPassant = currentFenReader.enPassantTarget === to;
             const isPromotion = toRank === '1' || toRank === '8';
             const promotionString = isPromotion ? `=${newFenReader.getPieceAt(to)?.toUpperCase()}` : '';
-            if (isCapture) {
+            if (isCapture || isEnPassant) {
                 // This is correct for en passant as well
                 return `${fromFile}x${to}${promotionString}${checkString}`;
             }
@@ -1348,33 +1375,33 @@ class ChessBoard extends HTMLElement {
 
         if (isThreefoldRepetition) {
             this.#messageDialog('Draw: Threefold repetition');
-            return this.#gameOver('3fr');
+            return this.#gameOver();
         }
 
         if (fenReader.isCheckmate) {
             this.#messageDialog('Game over: Checkmate');
-            return this.#gameOver('cm');
+            return this.#gameOver();
         }
 
         if (fenReader.isInsufficientMaterial) {
             this.#messageDialog('Draw: Insufficient material');
-            return this.#gameOver('im');
+            return this.#gameOver();
         }
 
         if (fenReader.isStalemate) {
             this.#messageDialog('Draw: Stalemate');
-            return this.#gameOver('sm');
+            return this.#gameOver();
         }
 
         if (fenReader.is50MoveRule) {
             this.#messageDialog('Draw: Fifty move rule');
-            return this.#gameOver('50mr');
+            return this.#gameOver();
         }
 
 
     }
 
-    #gameOver(result: string) {
+    #gameOver() {
         this.#isGameOver = true;
     }
 
@@ -1404,6 +1431,57 @@ class ChessBoard extends HTMLElement {
         }
         this.append(promotionDialog);
         promotionDialog.showModal();
+        return promise;
+    }
+
+    #loadFenDialog() {
+        const { promise, resolve } = Promise.withResolvers<string | null>();
+        const dialog = document.createElement('dialog');
+        dialog.addEventListener('cancel', () => {
+            dialog.remove();
+            resolve(null);
+        });
+
+        const div = document.createElement('div');
+        div.style.display = 'grid';
+        div.style.gap = '.4rem';
+
+        const label = document.createElement('label');
+        label.textContent = 'Enter FEN';
+        label.htmlFor = 'fen-input';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'fen-input';
+
+        div.replaceChildren(label, input);
+
+        const buttonDiv = document.createElement('div');
+        buttonDiv.style.display = 'flex';
+        buttonDiv.style.justifyContent = 'end';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', () => {
+            dialog.close();
+            dialog.remove();
+            resolve(null);
+        })
+        buttonDiv.replaceChildren(cancel);
+
+        const form = document.createElement('form');
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            dialog.close();
+            dialog.remove();
+            resolve(input.value.trim());
+        });
+
+        form.replaceChildren(div, buttonDiv);
+        dialog.replaceChildren(form);
+
+        this.append(dialog);
+        dialog.showModal();
         return promise;
     }
 
