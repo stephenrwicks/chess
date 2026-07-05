@@ -13,21 +13,6 @@
 type Direction = 'up' | 'upright' | 'right' | 'downright' | 'down' | 'downleft' | 'left' | 'upleft';
 type PieceNotation = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p';
 
-// If a coordinate is null it has been accessed but there is no piece
-// If a coordinate is undefined it has not been looked up yet
-type CoordinateMemoMap = Map<string, CoordinateMemo>;
-
-type CoordinateMemo = {
-    piece: PieceNotation | null;
-    color: 'w' | 'b' | null;
-    controlling: Set<string> | null;
-    legalMoves: Set<string> | null;
-};
-
-
-// I am refactoring FenReader to use lazyloaded / memoized getters. 
-// So instead of doing logic ahead of time we will calculate once
-// Memoize movesets of pieces as they are accessed
 
 class FenReader {
 
