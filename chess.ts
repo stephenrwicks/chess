@@ -319,6 +319,7 @@ class FenReader {
         else if (p === 'p') this.#legalMovesMemo[from] = this.#getPawnMoves(from);
 
         for (const to of this.#legalMovesMemo[from]) {
+            console.log(to);
             if (this.#detectCheck(from, to)) this.#legalMovesMemo[from].delete(to);
         }
         return this.#legalMovesMemo[from];
@@ -726,14 +727,12 @@ class FenReader {
             const enPassantFileIndex = 'abcdefgh'.indexOf(enPassantFile);
             // The pawn we capture will always be on rank 4 or 5
             const enPassantPawnRank = this.activeColor == 'w' ? '5' : '4';
-            console.log(enPassantPawnRank);
             const enPassantRankArray = this.#expandRank(ranks[8 - Number(enPassantPawnRank)]);
             enPassantRankArray[enPassantFileIndex] = '0';
             ranks[8 - Number(enPassantPawnRank)] = this.#compressRank(enPassantRankArray);
         }
 
         const newPiecePlacement = ranks.join('/');
-        console.log(newPiecePlacement);
         const fen = `${newPiecePlacement} ${activeColor} ${castlingRights} ${newEnPassantTarget} ${halfMoveClock} ${fullMoveNumber}`;
 
         return new FenReader(fen, isPromotion);
@@ -868,6 +867,13 @@ class ChessBoard extends HTMLElement {
         randomBotGameButton.textContent = 'Random bot game';
         randomBotGameButton.addEventListener('click', () => this.doRandomGame());
 
+        const playBotButton = document.createElement('button');
+        playBotButton.type = 'button';
+        playBotButton.textContent = 'Play bot';
+        playBotButton.addEventListener('click', () => {
+            this.#playBot();
+        });
+
         const mainButtons = document.createElement('div');
         mainButtons.style.display = 'flex';
         mainButtons.style.gap = '.4rem';
@@ -990,7 +996,7 @@ class ChessBoard extends HTMLElement {
             this.#forwardButton,
             this.#goToEndButton,
             this.#takebackButton,
-            randomBotGameButton,
+            playBotButton,
 
         );
 
@@ -1043,20 +1049,6 @@ class ChessBoard extends HTMLElement {
         this.#commitNewMove(fenReader);
         this.#updateDataset(fenReader);
 
-    }
-
-    async doRandomGame() {
-        const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
-        this.newGame();
-        while (!this.#isGameOver) {
-            this.#autoPromote = true;
-
-            const fenReader = this.#getFenReader(this.fen);
-            const { from, to } = fenReader.getRandomLegalMove();
-            await sleep();
-            this.#tryMove(from, to);
-        }
-        this.#autoPromote = false;
     }
 
     newGame() {
@@ -1129,6 +1121,9 @@ class ChessBoard extends HTMLElement {
         this.#addNotation(notation);
 
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
+
+
+
     }
 
     #getNotation(from: string, to: string, currentFenReader: FenReader, newFenReader: FenReader) {
@@ -1221,6 +1216,9 @@ class ChessBoard extends HTMLElement {
 
             const fenReader = this.#getFenReader(this.fen);
             if (color !== fenReader.activeColor) return;
+
+            // Bot mode
+            if (this.#isPlayingBot && color === this.#botColor) return;
 
             if (this.#drag) {
                 piece.style.position = 'absolute';
@@ -1349,11 +1347,7 @@ class ChessBoard extends HTMLElement {
 
             }
         }
-        // [...this.#pgnDiv.childNodes].filter(n => n instanceof HTMLButtonElement).forEach((b, i) => {
-        //     console.log(b);
-        //     b.style.backgroundColor = '';
-        //     if (i === this.#currentlyViewingIndex) b.style.backgroundColor = 'blue';
-        // })
+
         this.#fenDiv.textContent = fenReader.fen;
     }
 
@@ -1397,7 +1391,6 @@ class ChessBoard extends HTMLElement {
             this.#messageDialog('Draw: Fifty move rule');
             return this.#gameOver();
         }
-
 
     }
 
@@ -1529,10 +1522,100 @@ class ChessBoard extends HTMLElement {
         //     //if (!result) throw new Error('Error loading game');
         // }
     }
+
+    #isPlayingBot = false;
+    #botColor: 'w' | 'b' | null = null;
+    async #playBot() {
+        this.newGame();
+        this.#botColor = 'b';
+        this.#isPlayingBot = true;
+        // You have to make it so that you can't play one color, which alternates some logic here
+        // Does bot even need an instance, a class, etc? Can't I just make the move search a function here?
+
+        const sleep = () => new Promise(resolve => setTimeout(resolve, 2000));
+
+        while (!this.#isGameOver) {
+            console.log('Bot in progress');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const latestFenReader = this.#getFenReader(this.#fenArray[this.#fenArray.length - 1]);
+            if (latestFenReader.activeColor !== this.#botColor) continue;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            const { from, to } = latestFenReader.getRandomLegalMove();
+            // Check for promotion and promote to queen
+
+            this.#tryMove(from, to);
+
+
+        }
+        this.#isPlayingBot = false;
+        this.#botColor = null;
+
+    }
+
+    async doRandomGame() {
+        const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
+        this.newGame();
+        while (!this.#isGameOver) {
+            this.#autoPromote = true;
+
+            const fenReader = this.#getFenReader(this.fen);
+            const { from, to } = fenReader.getRandomLegalMove();
+            await sleep();
+            this.#tryMove(from, to);
+        }
+        this.#autoPromote = false;
+    }
 }
 
 
-class ChessBot {
+// This kind of class should handle holding fens and stuff
+// It will probably have a bunch once it goes into depth but for now it will be flat
+abstract class ChessBot {
+    // FenReaders: Record<string, FenReader> = {};
+    color: 'w' | 'b';
+
+    constructor(fenReader: FenReader, color: 'w' | 'b') {
+        this.currentFenReader = fenReader;
+        this.color = color;
+    }
+
+    // getFenReader(fen: string, isPromotion = false) {
+    //     if (this.FenReaders[fen]) return this.FenReaders[fen];
+    //     const newFR = new FenReader(fen, isPromotion);
+    //     this.FenReaders[fen] = newFR;
+    //     return newFR;
+    // }
+
+    currentFenReader: FenReader = new FenReader(FenReader.startingFen);
+
+    isBotsTurn() {
+        return this.currentFenReader.activeColor === this.color;
+    }
+
+    receiveMove(from: string, to: string) {
+        const fenReader = this.currentFenReader.requestMove(from, to);
+        if (fenReader === null) throw new Error('Bot received an illegal move');
+        return this.getBestMove();
+    }
+
+    // Does it return a move or a fenreader?
+    // We are returning moves which the board then plays out, so there is some redundancy, but it prob does not matter
+    // Esp if I am doing this with depth
+    abstract getBestMove(): { from: string; to: string };
+
+
+}
+
+class BabyBot extends ChessBot {
+
+
+
+    getBestMove(): { from: string; to: string } {
+        const move = this.currentFenReader.getRandomLegalMove();
+        // if move is promotion... do something
+        return move;
+    }
 
 }
 

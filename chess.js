@@ -327,6 +327,7 @@ class FenReader {
         else if (p === 'p')
             this.#legalMovesMemo[from] = this.#getPawnMoves(from);
         for (const to of this.#legalMovesMemo[from]) {
+            console.log(to);
             if (this.#detectCheck(from, to))
                 this.#legalMovesMemo[from].delete(to);
         }
@@ -711,13 +712,11 @@ class FenReader {
             const enPassantFile = enPassantTarget[0];
             const enPassantFileIndex = 'abcdefgh'.indexOf(enPassantFile);
             const enPassantPawnRank = this.activeColor == 'w' ? '5' : '4';
-            console.log(enPassantPawnRank);
             const enPassantRankArray = this.#expandRank(ranks[8 - Number(enPassantPawnRank)]);
             enPassantRankArray[enPassantFileIndex] = '0';
             ranks[8 - Number(enPassantPawnRank)] = this.#compressRank(enPassantRankArray);
         }
         const newPiecePlacement = ranks.join('/');
-        console.log(newPiecePlacement);
         const fen = `${newPiecePlacement} ${activeColor} ${castlingRights} ${newEnPassantTarget} ${halfMoveClock} ${fullMoveNumber}`;
         return new FenReader(fen, isPromotion);
     }
@@ -833,6 +832,12 @@ class ChessBoard extends HTMLElement {
         randomBotGameButton.type = 'button';
         randomBotGameButton.textContent = 'Random bot game';
         randomBotGameButton.addEventListener('click', () => this.doRandomGame());
+        const playBotButton = document.createElement('button');
+        playBotButton.type = 'button';
+        playBotButton.textContent = 'Play bot';
+        playBotButton.addEventListener('click', () => {
+            this.#playBot();
+        });
         const mainButtons = document.createElement('div');
         mainButtons.style.display = 'flex';
         mainButtons.style.gap = '.4rem';
@@ -919,7 +924,7 @@ class ChessBoard extends HTMLElement {
             this.loadFen(fen);
         });
         mainButtons.replaceChildren(newGameButton, resignButton, loadFenButton, settingsButton);
-        controls.replaceChildren(this.#goToStartButton, this.#backButton, this.#forwardButton, this.#goToEndButton, this.#takebackButton, randomBotGameButton);
+        controls.replaceChildren(this.#goToStartButton, this.#backButton, this.#forwardButton, this.#goToEndButton, this.#takebackButton, playBotButton);
         const panel = document.createElement('div');
         panel.className = 'panel';
         this.#notationDiv.className = 'notation';
@@ -960,18 +965,6 @@ class ChessBoard extends HTMLElement {
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
         this.#updateDataset(fenReader);
-    }
-    async doRandomGame() {
-        const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
-        this.newGame();
-        while (!this.#isGameOver) {
-            this.#autoPromote = true;
-            const fenReader = this.#getFenReader(this.fen);
-            const { from, to } = fenReader.getRandomLegalMove();
-            await sleep();
-            this.#tryMove(from, to);
-        }
-        this.#autoPromote = false;
     }
     newGame() {
         this.loadFen(FenReader.startingFen);
@@ -1112,6 +1105,8 @@ class ChessBoard extends HTMLElement {
                 return;
             const fenReader = this.#getFenReader(this.fen);
             if (color !== fenReader.activeColor)
+                return;
+            if (this.#isPlayingBot && color === this.#botColor)
                 return;
             if (this.#drag) {
                 piece.style.position = 'absolute';
@@ -1347,8 +1342,61 @@ class ChessBoard extends HTMLElement {
     }
     async loadGame(game) {
     }
+    #isPlayingBot = false;
+    #botColor = null;
+    async #playBot() {
+        this.newGame();
+        this.#botColor = 'b';
+        this.#isPlayingBot = true;
+        const sleep = () => new Promise(resolve => setTimeout(resolve, 2000));
+        while (!this.#isGameOver) {
+            console.log('Bot in progress');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const latestFenReader = this.#getFenReader(this.#fenArray[this.#fenArray.length - 1]);
+            if (latestFenReader.activeColor !== this.#botColor)
+                continue;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const { from, to } = latestFenReader.getRandomLegalMove();
+            this.#tryMove(from, to);
+        }
+        this.#isPlayingBot = false;
+        this.#botColor = null;
+    }
+    async doRandomGame() {
+        const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
+        this.newGame();
+        while (!this.#isGameOver) {
+            this.#autoPromote = true;
+            const fenReader = this.#getFenReader(this.fen);
+            const { from, to } = fenReader.getRandomLegalMove();
+            await sleep();
+            this.#tryMove(from, to);
+        }
+        this.#autoPromote = false;
+    }
 }
 class ChessBot {
+    color;
+    constructor(fenReader, color) {
+        this.currentFenReader = fenReader;
+        this.color = color;
+    }
+    currentFenReader = new FenReader(FenReader.startingFen);
+    isBotsTurn() {
+        return this.currentFenReader.activeColor === this.color;
+    }
+    receiveMove(from, to) {
+        const fenReader = this.currentFenReader.requestMove(from, to);
+        if (fenReader === null)
+            throw new Error('Bot received an illegal move');
+        return this.getBestMove();
+    }
+}
+class BabyBot extends ChessBot {
+    getBestMove() {
+        const move = this.currentFenReader.getRandomLegalMove();
+        return move;
+    }
 }
 customElements.define('chess-board', ChessBoard);
 const x = document.createElement('chess-board');
