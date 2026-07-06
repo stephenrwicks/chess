@@ -327,7 +327,6 @@ class FenReader {
         else if (p === 'p')
             this.#legalMovesMemo[from] = this.#getPawnMoves(from);
         for (const to of this.#legalMovesMemo[from]) {
-            console.log(to);
             if (this.#detectCheck(from, to))
                 this.#legalMovesMemo[from].delete(to);
         }
@@ -426,6 +425,8 @@ class FenReader {
                 allCoordinates.push(coord);
             }
         }
+        if (!this.activeColorHasLegalMoves)
+            return null;
         const from = getRandom(allCoordinates);
         const moveset = this.getLegalMoves(from);
         if (!moveset.size)
@@ -770,6 +771,8 @@ class ChessBoard extends HTMLElement {
     #notationArray = [];
     #currentlyViewingIndex = 0;
     #isGameOver = false;
+    #isWhite = true;
+    #board = document.createElement('div');
     #backButton = document.createElement('button');
     #forwardButton = document.createElement('button');
     #goToStartButton = document.createElement('button');
@@ -788,8 +791,7 @@ class ChessBoard extends HTMLElement {
         if (this.#isInitialized)
             return;
         let dark = false;
-        const board = document.createElement('div');
-        board.className = 'board';
+        this.#board.className = 'board';
         for (const rank of '87654321') {
             for (const file of 'abcdefgh') {
                 const square = document.createElement('div');
@@ -797,7 +799,7 @@ class ChessBoard extends HTMLElement {
                     square.classList.add('d');
                 this.#squaresObj[`${file}${rank}`] = square;
                 this.#squaresMap.set(square, `${file}${rank}`);
-                board.append(square);
+                this.#board.append(square);
                 dark = !dark;
             }
             dark = !dark;
@@ -810,7 +812,7 @@ class ChessBoard extends HTMLElement {
         fenInput.addEventListener('keyup', (e) => {
             if (e.key !== 'Enter')
                 return;
-            this.loadFen(fenInput.value);
+            this.#loadFen(fenInput.value);
             fenInput.value = '';
         });
         this.#backButton.type = 'button';
@@ -828,30 +830,39 @@ class ChessBoard extends HTMLElement {
         this.#takebackButton.type = 'button';
         this.#takebackButton.textContent = '↺';
         this.#takebackButton.addEventListener('click', () => this.takeback());
-        const randomBotGameButton = document.createElement('button');
-        randomBotGameButton.type = 'button';
-        randomBotGameButton.textContent = 'Random bot game';
-        randomBotGameButton.addEventListener('click', () => this.doRandomGame());
         const playBotButton = document.createElement('button');
         playBotButton.type = 'button';
         playBotButton.textContent = 'Play bot';
         playBotButton.addEventListener('click', () => {
-            this.#playBot();
+            this.#playBotDialog();
         });
         const mainButtons = document.createElement('div');
         mainButtons.style.display = 'flex';
+        mainButtons.style.flexFlow = 'row wrap';
         mainButtons.style.gap = '.4rem';
-        const newGameButton = document.createElement('button');
-        newGameButton.type = 'button';
-        newGameButton.textContent = 'New Game';
-        newGameButton.addEventListener('click', () => this.newGame());
+        const newAnalysisButton = document.createElement('button');
+        newAnalysisButton.type = 'button';
+        newAnalysisButton.textContent = 'Analysis';
+        newAnalysisButton.addEventListener('click', () => this.#restartGame());
         const resignButton = document.createElement('button');
         resignButton.type = 'button';
         resignButton.textContent = 'Resign';
-        resignButton.addEventListener('click', () => this.resign());
+        resignButton.addEventListener('click', () => this.#endGame());
         const loadFenButton = document.createElement('button');
         loadFenButton.type = 'button';
         loadFenButton.textContent = 'Load FEN';
+        loadFenButton.addEventListener('click', async () => {
+            const fen = await this.#loadFenDialog();
+            if (!fen)
+                return;
+            this.#loadFen(fen);
+        });
+        const flipBoardButton = document.createElement('button');
+        flipBoardButton.type = 'button';
+        flipBoardButton.textContent = 'Flip Board';
+        flipBoardButton.addEventListener('click', () => {
+            this.#flipBoard();
+        });
         const pieceSizeDiv = document.createElement('div');
         const pieceSizeLabel = document.createElement('label');
         pieceSizeLabel.textContent = 'Piece Size';
@@ -917,14 +928,8 @@ class ChessBoard extends HTMLElement {
         settingsOk.textContent = 'OK';
         settingsOk.addEventListener('click', () => settingsDialog.close());
         settingsDialog.replaceChildren(radioFieldset, autoPromoteLabel, pieceSizeDiv, colorFieldset, settingsOk);
-        loadFenButton.addEventListener('click', async () => {
-            const fen = await this.#loadFenDialog();
-            if (!fen)
-                return;
-            this.loadFen(fen);
-        });
-        mainButtons.replaceChildren(newGameButton, resignButton, loadFenButton, settingsButton);
-        controls.replaceChildren(this.#goToStartButton, this.#backButton, this.#forwardButton, this.#goToEndButton, this.#takebackButton, playBotButton);
+        mainButtons.replaceChildren(newAnalysisButton, playBotButton, resignButton, loadFenButton, flipBoardButton, settingsButton);
+        controls.replaceChildren(this.#goToStartButton, this.#backButton, this.#forwardButton, this.#goToEndButton, this.#takebackButton);
         const panel = document.createElement('div');
         panel.className = 'panel';
         this.#notationDiv.className = 'notation';
@@ -938,8 +943,8 @@ class ChessBoard extends HTMLElement {
         });
         this.#fenDiv.className = 'fen-div';
         panel.replaceChildren(mainButtons, controls, this.#notationDiv, this.#fenDiv);
-        this.replaceChildren(board, panel, settingsDialog);
-        this.newGame();
+        this.replaceChildren(this.#board, panel, settingsDialog);
+        this.#restartGame();
         this.#isInitialized = true;
     }
     get fen() {
@@ -955,7 +960,7 @@ class ChessBoard extends HTMLElement {
     get isCurrent() {
         return this.#currentlyViewingIndex === this.#fenArray.length - 1 && !this.#isGameOver;
     }
-    loadFen(fen) {
+    #loadFen(fen) {
         this.#isGameOver = false;
         this.#fenArray = [];
         this.#clearNotation();
@@ -966,11 +971,27 @@ class ChessBoard extends HTMLElement {
         this.#commitNewMove(fenReader);
         this.#updateDataset(fenReader);
     }
-    newGame() {
-        this.loadFen(FenReader.startingFen);
-    }
-    resign() {
+    #endGame() {
         this.#isGameOver = true;
+    }
+    #restartGame() {
+        this.#endGame();
+        this.#loadFen(FenReader.startingFen);
+    }
+    #flipBoard() {
+        this.#isWhite = !this.#isWhite;
+        this.#setUpPieces();
+    }
+    #setUpPieces() {
+        this.#board.replaceChildren();
+        const ranks = this.#isWhite ? '87654321' : '12345678';
+        const files = this.#isWhite ? 'abcdefgh' : 'hgfedcba';
+        for (const rank of ranks) {
+            for (const file of files) {
+                const square = this.#squaresObj[`${file}${rank}`];
+                this.#board.append(square);
+            }
+        }
     }
     goToPly(fenIndex) {
         if (fenIndex < 0)
@@ -1234,27 +1255,24 @@ class ChessBoard extends HTMLElement {
         this.#fenArray.push(fenReader.fen);
         if (isThreefoldRepetition) {
             this.#messageDialog('Draw: Threefold repetition');
-            return this.#gameOver();
+            return this.#endGame();
         }
         if (fenReader.isCheckmate) {
             this.#messageDialog('Game over: Checkmate');
-            return this.#gameOver();
+            return this.#endGame();
         }
         if (fenReader.isInsufficientMaterial) {
             this.#messageDialog('Draw: Insufficient material');
-            return this.#gameOver();
+            return this.#endGame();
         }
         if (fenReader.isStalemate) {
             this.#messageDialog('Draw: Stalemate');
-            return this.#gameOver();
+            return this.#endGame();
         }
         if (fenReader.is50MoveRule) {
             this.#messageDialog('Draw: Fifty move rule');
-            return this.#gameOver();
+            return this.#endGame();
         }
-    }
-    #gameOver() {
-        this.#isGameOver = true;
     }
     #promotionDialog(color) {
         const { promise, resolve } = Promise.withResolvers();
@@ -1342,13 +1360,56 @@ class ChessBoard extends HTMLElement {
     }
     async loadGame(game) {
     }
+    async #playBotDialog() {
+        const dialog = document.createElement('dialog');
+        dialog.addEventListener('cancel', () => {
+            dialog.remove();
+        });
+        const div = document.createElement('div');
+        const label = document.createElement('label');
+        label.textContent = 'Color';
+        label.htmlFor = 'color-select';
+        const colorSelect = document.createElement('select');
+        colorSelect.id = 'color-select';
+        colorSelect.add(new Option('White', 'w', true));
+        colorSelect.add(new Option('Black', 'b', false));
+        colorSelect.required = true;
+        div.replaceChildren(label, colorSelect);
+        const buttonDiv = document.createElement('div');
+        buttonDiv.style.display = 'flex';
+        buttonDiv.style.justifyContent = 'end';
+        buttonDiv.style.gap = '.4rem';
+        const okButton = document.createElement('button');
+        okButton.type = 'submit';
+        okButton.textContent = 'Go';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', () => {
+            dialog.close();
+            dialog.remove();
+        });
+        buttonDiv.replaceChildren(cancel, okButton);
+        const form = document.createElement('form');
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            dialog.close();
+            dialog.remove();
+            this.#isWhite = colorSelect.value === 'w';
+            this.#setUpPieces();
+            this.#playBot();
+        });
+        form.replaceChildren(div, buttonDiv);
+        dialog.replaceChildren(form);
+        this.append(dialog);
+        dialog.showModal();
+    }
     #isPlayingBot = false;
     #botColor = null;
     async #playBot() {
-        this.newGame();
-        this.#botColor = 'b';
+        this.#restartGame();
+        this.#botColor = this.#isWhite ? 'b' : 'w';
         this.#isPlayingBot = true;
-        const sleep = () => new Promise(resolve => setTimeout(resolve, 2000));
         while (!this.#isGameOver) {
             console.log('Bot in progress');
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1356,46 +1417,13 @@ class ChessBoard extends HTMLElement {
             if (latestFenReader.activeColor !== this.#botColor)
                 continue;
             await new Promise(resolve => setTimeout(resolve, 1000));
-            const { from, to } = latestFenReader.getRandomLegalMove();
-            this.#tryMove(from, to);
+            const move = latestFenReader.getRandomLegalMove();
+            if (!move)
+                break;
+            this.#tryMove(move.from, move.to);
         }
         this.#isPlayingBot = false;
         this.#botColor = null;
-    }
-    async doRandomGame() {
-        const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
-        this.newGame();
-        while (!this.#isGameOver) {
-            this.#autoPromote = true;
-            const fenReader = this.#getFenReader(this.fen);
-            const { from, to } = fenReader.getRandomLegalMove();
-            await sleep();
-            this.#tryMove(from, to);
-        }
-        this.#autoPromote = false;
-    }
-}
-class ChessBot {
-    color;
-    constructor(fenReader, color) {
-        this.currentFenReader = fenReader;
-        this.color = color;
-    }
-    currentFenReader = new FenReader(FenReader.startingFen);
-    isBotsTurn() {
-        return this.currentFenReader.activeColor === this.color;
-    }
-    receiveMove(from, to) {
-        const fenReader = this.currentFenReader.requestMove(from, to);
-        if (fenReader === null)
-            throw new Error('Bot received an illegal move');
-        return this.getBestMove();
-    }
-}
-class BabyBot extends ChessBot {
-    getBestMove() {
-        const move = this.currentFenReader.getRandomLegalMove();
-        return move;
     }
 }
 customElements.define('chess-board', ChessBoard);

@@ -319,7 +319,6 @@ class FenReader {
         else if (p === 'p') this.#legalMovesMemo[from] = this.#getPawnMoves(from);
 
         for (const to of this.#legalMovesMemo[from]) {
-            console.log(to);
             if (this.#detectCheck(from, to)) this.#legalMovesMemo[from].delete(to);
         }
         return this.#legalMovesMemo[from];
@@ -401,7 +400,7 @@ class FenReader {
         return result;
     }
 
-    getRandomLegalMove(): { from: string, to: string } {
+    getRandomLegalMove(): { from: string, to: string } | null {
         const getRandom = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
         const allCoordinates = [];
         for (const [coord, p] of Object.entries(this.coordinateObject)) {
@@ -413,6 +412,7 @@ class FenReader {
                 allCoordinates.push(coord)
             }
         }
+        if (!this.activeColorHasLegalMoves) return null;
         const from = getRandom(allCoordinates);
         const moveset = this.getLegalMoves(from);
         if (!moveset.size) return this.getRandomLegalMove();
@@ -785,6 +785,7 @@ class FenReader {
 class ChessBoard extends HTMLElement {
 
     #isInitialized = false;
+
     #squaresObj: Record<string, HTMLDivElement> = {};
     #squaresMap: Map<HTMLDivElement, string> = new Map();
     #threeFoldRepetitionCounter: Record<string, number> = {};
@@ -792,6 +793,8 @@ class ChessBoard extends HTMLElement {
     #notationArray: string[] = [];
     #currentlyViewingIndex = 0;
     #isGameOver = false;
+    #isWhite = true;
+    #board = document.createElement('div');
     #backButton = document.createElement('button');
     #forwardButton = document.createElement('button');
     #goToStartButton = document.createElement('button');
@@ -816,15 +819,15 @@ class ChessBoard extends HTMLElement {
     connectedCallback() {
         if (this.#isInitialized) return;
         let dark = false;
-        const board = document.createElement('div');
-        board.className = 'board';
+
+        this.#board.className = 'board';
         for (const rank of '87654321') {
             for (const file of 'abcdefgh') {
                 const square = document.createElement('div');
                 if (dark) square.classList.add('d');
                 this.#squaresObj[`${file}${rank}`] = square;
                 this.#squaresMap.set(square, `${file}${rank}`);
-                board.append(square);
+                this.#board.append(square);
                 dark = !dark;
             }
             dark = !dark;
@@ -838,7 +841,7 @@ class ChessBoard extends HTMLElement {
         fenInput.placeholder = 'Load FEN';
         fenInput.addEventListener('keyup', (e) => {
             if (e.key !== 'Enter') return;
-            this.loadFen(fenInput.value);
+            this.#loadFen(fenInput.value);
             fenInput.value = '';
         });
 
@@ -862,35 +865,49 @@ class ChessBoard extends HTMLElement {
         this.#takebackButton.textContent = '↺';
         this.#takebackButton.addEventListener('click', () => this.takeback());
 
-        const randomBotGameButton = document.createElement('button');
-        randomBotGameButton.type = 'button';
-        randomBotGameButton.textContent = 'Random bot game';
-        randomBotGameButton.addEventListener('click', () => this.doRandomGame());
+        // const randomBotGameButton = document.createElement('button');
+        // randomBotGameButton.type = 'button';
+        // randomBotGameButton.textContent = 'Random bot game';
+        // randomBotGameButton.addEventListener('click', () => this.doRandomGame());
 
         const playBotButton = document.createElement('button');
         playBotButton.type = 'button';
         playBotButton.textContent = 'Play bot';
         playBotButton.addEventListener('click', () => {
-            this.#playBot();
+            this.#playBotDialog();
         });
 
         const mainButtons = document.createElement('div');
         mainButtons.style.display = 'flex';
+        mainButtons.style.flexFlow = 'row wrap';
         mainButtons.style.gap = '.4rem';
 
-        const newGameButton = document.createElement('button');
-        newGameButton.type = 'button';
-        newGameButton.textContent = 'New Game';
-        newGameButton.addEventListener('click', () => this.newGame());
+        const newAnalysisButton = document.createElement('button');
+        newAnalysisButton.type = 'button';
+        newAnalysisButton.textContent = 'Analysis';
+        newAnalysisButton.addEventListener('click', () => this.#restartGame());
 
         const resignButton = document.createElement('button');
         resignButton.type = 'button';
         resignButton.textContent = 'Resign';
-        resignButton.addEventListener('click', () => this.resign());
+        resignButton.addEventListener('click', () => this.#endGame());
 
         const loadFenButton = document.createElement('button');
         loadFenButton.type = 'button';
         loadFenButton.textContent = 'Load FEN';
+        loadFenButton.addEventListener('click', async () => {
+            const fen = await this.#loadFenDialog();
+            if (!fen) return;
+            this.#loadFen(fen);
+        });
+
+
+        const flipBoardButton = document.createElement('button');
+        flipBoardButton.type = 'button';
+        flipBoardButton.textContent = 'Flip Board';
+        flipBoardButton.addEventListener('click', () => {
+            this.#flipBoard();
+        });
 
         const pieceSizeDiv = document.createElement('div');
 
@@ -982,13 +999,15 @@ class ChessBoard extends HTMLElement {
             settingsOk
         );
 
-        loadFenButton.addEventListener('click', async () => {
-            const fen = await this.#loadFenDialog();
-            if (!fen) return;
-            this.loadFen(fen);
-        });
 
-        mainButtons.replaceChildren(newGameButton, resignButton, loadFenButton, settingsButton);
+        mainButtons.replaceChildren(
+            newAnalysisButton,
+            playBotButton,
+            resignButton,
+            loadFenButton,
+            flipBoardButton,
+            settingsButton
+        );
 
         controls.replaceChildren(
             this.#goToStartButton,
@@ -996,8 +1015,6 @@ class ChessBoard extends HTMLElement {
             this.#forwardButton,
             this.#goToEndButton,
             this.#takebackButton,
-            playBotButton,
-
         );
 
         const panel = document.createElement('div');
@@ -1016,8 +1033,8 @@ class ChessBoard extends HTMLElement {
 
         panel.replaceChildren(mainButtons, controls, this.#notationDiv, this.#fenDiv);
 
-        this.replaceChildren(board, panel, settingsDialog)
-        this.newGame();
+        this.replaceChildren(this.#board, panel, settingsDialog)
+        this.#restartGame();
         this.#isInitialized = true;
     }
 
@@ -1037,7 +1054,7 @@ class ChessBoard extends HTMLElement {
         return this.#currentlyViewingIndex === this.#fenArray.length - 1 && !this.#isGameOver;
     }
 
-    loadFen(fen: string) {
+    #loadFen(fen: string) {
         this.#isGameOver = false;
         this.#fenArray = [];
         this.#clearNotation();
@@ -1051,12 +1068,31 @@ class ChessBoard extends HTMLElement {
 
     }
 
-    newGame() {
-        this.loadFen(FenReader.startingFen);
+    #endGame() {
+        this.#isGameOver = true;
     }
 
-    resign() {
-        this.#isGameOver = true;
+    #restartGame() {
+        this.#endGame();
+        this.#loadFen(FenReader.startingFen);
+    }
+
+    #flipBoard() {
+        this.#isWhite = !this.#isWhite;
+        this.#setUpPieces();
+    }
+
+    #setUpPieces() {
+        this.#board.replaceChildren();
+        const ranks = this.#isWhite ? '87654321' : '12345678';
+        const files = this.#isWhite ? 'abcdefgh' : 'hgfedcba';
+
+        for (const rank of ranks) {
+            for (const file of files) {
+                const square = this.#squaresObj[`${file}${rank}`]
+                this.#board.append(square);
+            }
+        }
     }
 
     goToPly(fenIndex: number) {
@@ -1284,13 +1320,6 @@ class ChessBoard extends HTMLElement {
             this.#tryMove(from, to);
         };
 
-        // const handleClick = (e: Event) => {
-        //     e.preventDefault();
-        //     if (this.#drag) return;
-        //     if (this.#isGameOver) return;
-        //     if (!this.isCurrent) return;
-        // };
-
         piece.addEventListener('dragstart', (e) => e.preventDefault());
         piece.addEventListener('mousedown', (e) => e.preventDefault());
         piece.addEventListener('pointerdown', handleDown);
@@ -1355,7 +1384,6 @@ class ChessBoard extends HTMLElement {
         const isCurrent = this.#fenArray.length - 1 === this.#fenArray.indexOf(updatedFenReader.fen);
         this.dataset.activeColor = isCurrent ? updatedFenReader.activeColor : '';
         if (this.#isGameOver) this.dataset.activeColor = '';
-
     }
 
     #commitNewMove(fenReader: FenReader) {
@@ -1369,33 +1397,29 @@ class ChessBoard extends HTMLElement {
 
         if (isThreefoldRepetition) {
             this.#messageDialog('Draw: Threefold repetition');
-            return this.#gameOver();
+            return this.#endGame();
         }
 
         if (fenReader.isCheckmate) {
             this.#messageDialog('Game over: Checkmate');
-            return this.#gameOver();
+            return this.#endGame();
         }
 
         if (fenReader.isInsufficientMaterial) {
             this.#messageDialog('Draw: Insufficient material');
-            return this.#gameOver();
+            return this.#endGame();
         }
 
         if (fenReader.isStalemate) {
             this.#messageDialog('Draw: Stalemate');
-            return this.#gameOver();
+            return this.#endGame();
         }
 
         if (fenReader.is50MoveRule) {
             this.#messageDialog('Draw: Fifty move rule');
-            return this.#gameOver();
+            return this.#endGame();
         }
 
-    }
-
-    #gameOver() {
-        this.#isGameOver = true;
     }
 
     #promotionDialog(color: 'w' | 'b') {
@@ -1523,16 +1547,69 @@ class ChessBoard extends HTMLElement {
         // }
     }
 
+    async #playBotDialog() {
+        const dialog = document.createElement('dialog');
+        dialog.addEventListener('cancel', () => {
+            dialog.remove();
+        });
+
+        const div = document.createElement('div');
+
+        const label = document.createElement('label');
+        label.textContent = 'Color';
+        label.htmlFor = 'color-select';
+
+        const colorSelect = document.createElement('select');
+        colorSelect.id = 'color-select';
+        colorSelect.add(new Option('White', 'w', true));
+        colorSelect.add(new Option('Black', 'b', false));
+        colorSelect.required = true;
+
+        div.replaceChildren(label, colorSelect);
+
+        const buttonDiv = document.createElement('div');
+        buttonDiv.style.display = 'flex';
+        buttonDiv.style.justifyContent = 'end';
+        buttonDiv.style.gap = '.4rem';
+
+        const okButton = document.createElement('button');
+        okButton.type = 'submit';
+        okButton.textContent = 'Go';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', () => {
+            dialog.close();
+            dialog.remove();
+        })
+        buttonDiv.replaceChildren(cancel, okButton);
+
+        const form = document.createElement('form');
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            dialog.close();
+            dialog.remove();
+            this.#isWhite = colorSelect.value === 'w';
+            this.#setUpPieces();
+            this.#playBot();
+        });
+
+        form.replaceChildren(div, buttonDiv);
+        dialog.replaceChildren(form);
+
+        this.append(dialog);
+        dialog.showModal();
+    }
+
     #isPlayingBot = false;
     #botColor: 'w' | 'b' | null = null;
     async #playBot() {
-        this.newGame();
-        this.#botColor = 'b';
+        this.#restartGame();
+        this.#botColor = this.#isWhite ? 'b' : 'w';
         this.#isPlayingBot = true;
         // You have to make it so that you can't play one color, which alternates some logic here
         // Does bot even need an instance, a class, etc? Can't I just make the move search a function here?
-
-        const sleep = () => new Promise(resolve => setTimeout(resolve, 2000));
 
         while (!this.#isGameOver) {
             console.log('Bot in progress');
@@ -1541,10 +1618,11 @@ class ChessBoard extends HTMLElement {
             if (latestFenReader.activeColor !== this.#botColor) continue;
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            const { from, to } = latestFenReader.getRandomLegalMove();
+            const move = latestFenReader.getRandomLegalMove();
             // Check for promotion and promote to queen
+            if (!move) break;
+            this.#tryMove(move.from, move.to);
 
-            this.#tryMove(from, to);
 
 
         }
@@ -1553,71 +1631,71 @@ class ChessBoard extends HTMLElement {
 
     }
 
-    async doRandomGame() {
-        const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
-        this.newGame();
-        while (!this.#isGameOver) {
-            this.#autoPromote = true;
+    // async doRandomGame() {
+    //     const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
+    //     this.newGame();
+    //     while (!this.#isGameOver) {
+    //         this.#autoPromote = true;
 
-            const fenReader = this.#getFenReader(this.fen);
-            const { from, to } = fenReader.getRandomLegalMove();
-            await sleep();
-            this.#tryMove(from, to);
-        }
-        this.#autoPromote = false;
-    }
+    //         const fenReader = this.#getFenReader(this.fen);
+    //         const { from, to } = fenReader.getRandomLegalMove();
+    //         await sleep();
+    //         this.#tryMove(from, to);
+    //     }
+    //     this.#autoPromote = false;
+    // }
 }
 
 
 // This kind of class should handle holding fens and stuff
 // It will probably have a bunch once it goes into depth but for now it will be flat
-abstract class ChessBot {
-    // FenReaders: Record<string, FenReader> = {};
-    color: 'w' | 'b';
+// abstract class ChessBot {
+//     // FenReaders: Record<string, FenReader> = {};
+//     color: 'w' | 'b';
 
-    constructor(fenReader: FenReader, color: 'w' | 'b') {
-        this.currentFenReader = fenReader;
-        this.color = color;
-    }
+//     constructor(fenReader: FenReader, color: 'w' | 'b') {
+//         this.currentFenReader = fenReader;
+//         this.color = color;
+//     }
 
-    // getFenReader(fen: string, isPromotion = false) {
-    //     if (this.FenReaders[fen]) return this.FenReaders[fen];
-    //     const newFR = new FenReader(fen, isPromotion);
-    //     this.FenReaders[fen] = newFR;
-    //     return newFR;
-    // }
+//     // getFenReader(fen: string, isPromotion = false) {
+//     //     if (this.FenReaders[fen]) return this.FenReaders[fen];
+//     //     const newFR = new FenReader(fen, isPromotion);
+//     //     this.FenReaders[fen] = newFR;
+//     //     return newFR;
+//     // }
 
-    currentFenReader: FenReader = new FenReader(FenReader.startingFen);
+//     currentFenReader: FenReader = new FenReader(FenReader.startingFen);
 
-    isBotsTurn() {
-        return this.currentFenReader.activeColor === this.color;
-    }
+//     isBotsTurn() {
+//         return this.currentFenReader.activeColor === this.color;
+//     }
 
-    receiveMove(from: string, to: string) {
-        const fenReader = this.currentFenReader.requestMove(from, to);
-        if (fenReader === null) throw new Error('Bot received an illegal move');
-        return this.getBestMove();
-    }
+//     receiveMove(from: string, to: string) {
+//         const fenReader = this.currentFenReader.requestMove(from, to);
+//         if (fenReader === null) throw new Error('Bot received an illegal move');
+//         return this.getBestMove();
+//     }
 
-    // Does it return a move or a fenreader?
-    // We are returning moves which the board then plays out, so there is some redundancy, but it prob does not matter
-    // Esp if I am doing this with depth
-    abstract getBestMove(): { from: string; to: string };
-
-
-}
-
-class BabyBot extends ChessBot {
+//     // Does it return a move or a fenreader?
+//     // We are returning moves which the board then plays out, so there is some redundancy, but it prob does not matter
+//     // Esp if I am doing this with depth
+//     abstract getBestMove(): { from: string; to: string };
 
 
+// }
 
-    getBestMove(): { from: string; to: string } {
-        const move = this.currentFenReader.getRandomLegalMove();
-        // if move is promotion... do something
-        return move;
-    }
+// class BabyBot extends ChessBot {
 
-}
+
+
+//     getBestMove(): { from: string; to: string } {
+//         const move = this.currentFenReader.getRandomLegalMove();
+//         // if move is promotion... do something
+//         return move;
+//     }
+
+// }
 
 
 
