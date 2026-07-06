@@ -332,6 +332,24 @@ class FenReader {
         }
         return this.#legalMovesMemo[from];
     }
+    getAllLegalMovesForActiveColor() {
+        const result = new Set();
+        const color = this.activeColor;
+        for (const [from, p] of Object.entries(this.coordinateObject)) {
+            if (!p)
+                continue;
+            const isWhite = this.#isWhitePiece(p);
+            if (isWhite && color !== 'w')
+                continue;
+            if (!isWhite && color === 'w')
+                continue;
+            const moveset = this.getLegalMoves(from);
+            for (const to of moveset) {
+                result.add({ from, to });
+            }
+        }
+        return result;
+    }
     #controlledSquaresMemo = {};
     getControlledSquares(from) {
         if (this.#controlledSquaresMemo[from] instanceof Set)
@@ -799,7 +817,6 @@ class ChessBoard extends HTMLElement {
                     square.classList.add('d');
                 this.#squaresObj[`${file}${rank}`] = square;
                 this.#squaresMap.set(square, `${file}${rank}`);
-                this.#board.append(square);
                 dark = !dark;
             }
             dark = !dark;
@@ -837,9 +854,7 @@ class ChessBoard extends HTMLElement {
             this.#playBotDialog();
         });
         const mainButtons = document.createElement('div');
-        mainButtons.style.display = 'flex';
-        mainButtons.style.flexFlow = 'row wrap';
-        mainButtons.style.gap = '.4rem';
+        mainButtons.className = 'main-buttons';
         const newAnalysisButton = document.createElement('button');
         newAnalysisButton.type = 'button';
         newAnalysisButton.textContent = 'Analysis';
@@ -928,7 +943,7 @@ class ChessBoard extends HTMLElement {
         settingsOk.textContent = 'OK';
         settingsOk.addEventListener('click', () => settingsDialog.close());
         settingsDialog.replaceChildren(radioFieldset, autoPromoteLabel, pieceSizeDiv, colorFieldset, settingsOk);
-        mainButtons.replaceChildren(newAnalysisButton, playBotButton, resignButton, loadFenButton, flipBoardButton, settingsButton);
+        mainButtons.replaceChildren(newAnalysisButton, playBotButton, loadFenButton, resignButton, flipBoardButton, settingsButton);
         controls.replaceChildren(this.#goToStartButton, this.#backButton, this.#forwardButton, this.#goToEndButton, this.#takebackButton);
         const panel = document.createElement('div');
         panel.className = 'panel';
@@ -944,6 +959,7 @@ class ChessBoard extends HTMLElement {
         this.#fenDiv.className = 'fen-div';
         panel.replaceChildren(mainButtons, controls, this.#notationDiv, this.#fenDiv);
         this.replaceChildren(this.#board, panel, settingsDialog);
+        this.#setUpPieces();
         this.#restartGame();
         this.#isInitialized = true;
     }
@@ -1037,12 +1053,14 @@ class ChessBoard extends HTMLElement {
         const currentFenReader = this.#getFenReader(this.fen);
         let fenReader = currentFenReader.requestMove(from, to);
         if (fenReader === null)
-            return;
+            return false;
         if (fenReader.isPromotion) {
-            const promoteTo = this.#autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
+            const autoPromote = this.#autoPromote || (this.#isPlayingBot && this.#botColor === fenReader.inactiveColor);
+            console.log({ autoPromote });
+            const promoteTo = autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
             fenReader = fenReader.requestPromotion(promoteTo);
             if (fenReader === null)
-                return;
+                return false;
         }
         this.#updateDom(fenReader);
         this.#commitNewMove(fenReader);
@@ -1050,6 +1068,7 @@ class ChessBoard extends HTMLElement {
         const notation = this.#getNotation(from, to, currentFenReader, fenReader);
         this.#addNotation(notation);
         this.#currentlyViewingIndex = this.#fenArray.length - 1;
+        return true;
     }
     #getNotation(from, to, currentFenReader, newFenReader) {
         const fromFile = from[0];
@@ -1109,10 +1128,8 @@ class ChessBoard extends HTMLElement {
         let offsetY = 0;
         let moveset = null;
         const clearActiveStyle = () => {
-            piece.parentElement?.classList.remove('active');
-            for (const coordinate of moveset || []) {
-                const square = this.#squaresObj[coordinate];
-                square.classList.remove('legal');
+            for (const square of Object.values(this.#squaresObj)) {
+                square.classList.remove('legal', 'active');
             }
         };
         const handleDown = (e) => {
@@ -1121,13 +1138,13 @@ class ChessBoard extends HTMLElement {
                 return;
             if (!this.isCurrent)
                 return;
+            if (this.#isPlayingBot && color === this.#botColor)
+                return;
             const from = this.#squaresMap.get(piece.parentElement);
             if (!from)
                 return;
             const fenReader = this.#getFenReader(this.fen);
             if (color !== fenReader.activeColor)
-                return;
-            if (this.#isPlayingBot && color === this.#botColor)
                 return;
             if (this.#drag) {
                 piece.style.position = 'absolute';
@@ -1141,23 +1158,33 @@ class ChessBoard extends HTMLElement {
                 window.addEventListener('pointerup', handleUp, { once: true });
             }
             else {
-                setTimeout(() => {
-                    this.addEventListener('pointerdown', (e) => {
+                const pointerDown = async (e) => {
+                    let target = e.target;
+                    if (!(target instanceof HTMLElement))
+                        return;
+                    if (target.classList.contains('p')) {
+                        target = target.parentElement;
+                    }
+                    if (!(target instanceof HTMLDivElement))
+                        return;
+                    const to = this.#squaresMap.get(target);
+                    if (!to)
+                        return;
+                    const result = await this.#tryMove(from, to);
+                    if (result) {
                         clearActiveStyle();
-                        let target = e.target;
-                        if (!(target instanceof HTMLElement))
-                            return;
-                        if (target.classList.contains('p')) {
-                            target = target.parentElement;
-                        }
-                        if (!(target instanceof HTMLDivElement))
-                            return;
-                        const to = this.#squaresMap.get(target);
-                        if (!to)
-                            return;
-                        this.#tryMove(from, to);
-                    }, { once: true });
-                }, 0);
+                        console.log('aaa');
+                    }
+                    else {
+                        clearActiveStyle();
+                        setTimeout(() => {
+                            this.addEventListener('pointerdown', pointerDown, { once: true });
+                        }, 2);
+                    }
+                };
+                setTimeout(() => {
+                    this.addEventListener('pointerdown', pointerDown, { once: true });
+                }, 2);
             }
             this.#squaresObj[from].classList.add('active');
             moveset = fenReader.getLegalMoves(from);
@@ -1277,6 +1304,7 @@ class ChessBoard extends HTMLElement {
     #promotionDialog(color) {
         const { promise, resolve } = Promise.withResolvers();
         const promotionDialog = document.createElement('dialog');
+        promotionDialog.autofocus = false;
         promotionDialog.className = 'promote';
         promotionDialog.addEventListener('cancel', () => {
             promotionDialog.remove();
@@ -1310,18 +1338,20 @@ class ChessBoard extends HTMLElement {
             resolve(null);
         });
         const div = document.createElement('div');
-        div.style.display = 'grid';
-        div.style.gap = '.4rem';
         const label = document.createElement('label');
         label.textContent = 'Enter FEN';
         label.htmlFor = 'fen-input';
         const input = document.createElement('input');
         input.type = 'text';
         input.id = 'fen-input';
+        input.required = true;
         div.replaceChildren(label, input);
         const buttonDiv = document.createElement('div');
         buttonDiv.style.display = 'flex';
         buttonDiv.style.justifyContent = 'end';
+        const okButton = document.createElement('button');
+        okButton.type = 'submit';
+        okButton.textContent = 'Go';
         const cancel = document.createElement('button');
         cancel.type = 'button';
         cancel.textContent = 'Cancel';
@@ -1330,7 +1360,7 @@ class ChessBoard extends HTMLElement {
             dialog.remove();
             resolve(null);
         });
-        buttonDiv.replaceChildren(cancel);
+        buttonDiv.replaceChildren(cancel, okButton);
         const form = document.createElement('form');
         form.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -1417,13 +1447,25 @@ class ChessBoard extends HTMLElement {
             if (latestFenReader.activeColor !== this.#botColor)
                 continue;
             await new Promise(resolve => setTimeout(resolve, 1000));
-            const move = latestFenReader.getRandomLegalMove();
+            const move = this.#botPoorlyAttemptsToGetBestMove(latestFenReader);
             if (!move)
                 break;
             this.#tryMove(move.from, move.to);
         }
         this.#isPlayingBot = false;
         this.#botColor = null;
+    }
+    #botPoorlyAttemptsToGetBestMove(fenReader) {
+        const allLegalMoves = fenReader.getAllLegalMovesForActiveColor();
+        for (const move of allLegalMoves) {
+            const resultingPosition = fenReader.requestMove(move.from, move.to);
+            if (!resultingPosition)
+                throw new Error('Bot received illegal move somehow');
+            if (resultingPosition.isCheckmate) {
+                return move;
+            }
+        }
+        return [...allLegalMoves][Math.floor(Math.random() * allLegalMoves.size)];
     }
 }
 customElements.define('chess-board', ChessBoard);

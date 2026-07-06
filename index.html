@@ -8,9 +8,10 @@
         body {
             margin: 0px;
             display: grid;
-            justify-items: center;
-            height: 100vh;
+            place-items: center;
+            min-height: 100vh;
             background-color: antiquewhite;
+            scrollbar-gutter: stable;
         }
 
         chess-board {
@@ -87,8 +88,27 @@
                 }
             }
 
+            form {
+                --column-width: 20rem;
+                display: grid;
+                row-gap: 1.5rem;
+                padding: 1rem;
+
+                div:has(button[type="submit"]),
+                .button-div {
+                    grid-column: 1/-1;
+                    margin-top: 1rem;
+                    display: flex;
+                    place-self: end;
+                    justify-content: end;
+                    gap: 1rem;
+                }
+            }
+
             dialog[open] {
                 display: grid;
+                min-width: calc(var(--squareSize) * 5);
+                min-height: calc(var(--squareSize) * 5);
                 gap: calc(var(--squareSize) / 3);
                 padding: calc(var(--squareSize) / 3);
                 background-color: antiquewhite;
@@ -153,16 +173,26 @@
                 >div {
                     display: grid;
                     gap: var(--squareSize);
-                    grid-template-columns: min-content 1fr 1fr;
+                    grid-template-columns: 1.8rem 1fr 1fr;
                     min-height: 1.5rem;
                     gap: .2rem;
                     align-items: center;
 
                     button {
-                        background-color: unset;
+                        background-color: transparent;
                         border: 0px;
                         padding: 0px;
                     }
+                }
+            }
+
+            .main-buttons {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: .1rem;
+
+                button {
+                    width: auto;
                 }
             }
 
@@ -174,7 +204,6 @@
                 button {
                     width: auto;
                 }
-
             }
 
             label {
@@ -232,7 +261,8 @@
             button,
             input[type="text"],
             input[type="color"],
-            input[type="range"] {
+            input[type="range"],
+            select {
                 display: grid;
                 place-items: center;
                 height: 2rem;
@@ -245,20 +275,27 @@
                 outline: 0;
                 border: 1px solid var(--darkSquare);
                 color: black;
-                background-color: lightgray;
+
                 transition: background-color .1s ease-out;
 
                 &:hover:not(:disabled),
                 &:focus:not(:disabled) {
                     border-color: var(--accentColor);
-                    background-color: rgb(169, 169, 169)
                 }
 
                 &:active:not(:disabled) {
                     outline: 2px solid var(--accentColor);
                 }
 
-                &:is(input) {
+                &:where(button) {
+                    background-color: lightgray;
+                }
+
+                &:where(select) {
+                    width: 100%;
+                }
+
+                &:where(input) {
                     caret-color: var(--accentColor);
 
                     &:is(:active, :focus) {
@@ -275,6 +312,7 @@
 
                     &[type="text"] {
                         cursor: initial;
+                        width: 100%;
                     }
 
                 }
@@ -283,7 +321,7 @@
 
 
             @media (max-width: 768px) {
-                --squareSize: 12vw;
+                --squareSize: 12.3vw;
                 grid-template-columns: 1fr;
 
                 .panel {
