@@ -29,7 +29,6 @@ class FenReader {
         }
         Object.freeze(this.#coordinateObject);
         this.#isPromotion = isPromotion;
-        console.log('fr created');
     }
     get fen() {
         return this.#fen;
@@ -302,6 +301,56 @@ class FenReader {
             return true;
         })();
         return this.#blackCanCastleQueenside;
+    }
+    #evaluation = null;
+    get evaluation() {
+        if (this.#evaluation !== null)
+            return this.#evaluation;
+        if (this.isCheckmate) {
+            this.#evaluation = this.activeColor === 'w' ? -Infinity : Infinity;
+            return this.#evaluation;
+        }
+        let e = 0;
+        for (const k in this.coordinateObject) {
+            const p = this.coordinateObject[k];
+            if (!p)
+                continue;
+            if (p === 'Q') {
+                e += 9;
+            }
+            if (p === 'q') {
+                e -= 9;
+            }
+            if (p === 'R') {
+                e += 5;
+            }
+            if (p === 'r') {
+                e -= 5;
+            }
+            if (p === 'B' || p === 'N') {
+                e += 3;
+            }
+            if (p === 'b' || p === 'n') {
+                e -= 3;
+            }
+            if (p === 'P') {
+                e += 1;
+            }
+            if (p === 'p') {
+                e -= 1;
+            }
+        }
+        const e4 = this.getPieceAt('e4');
+        const d4 = this.getPieceAt('d4');
+        const e5 = this.getPieceAt('e5');
+        const d5 = this.getPieceAt('d5');
+        for (const p of [e4, d4, e5, d5]) {
+            if (!p)
+                continue;
+            e += this.#isWhitePiece(p) ? .2 : -.2;
+        }
+        this.#evaluation = e;
+        return this.#evaluation;
     }
     #legalMovesMemo = {};
     getLegalMoves(from) {
@@ -958,6 +1007,21 @@ class ChessBoard extends HTMLElement {
         });
         this.#fenDiv.className = 'fen-div';
         panel.replaceChildren(mainButtons, controls, this.#notationDiv, this.#fenDiv);
+        this.#board.tabIndex = 0;
+        this.#board.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') {
+                this.forward();
+            }
+            else if (e.key === 'ArrowLeft') {
+                this.back();
+            }
+            else if (e.key === 'ArrowUp') {
+                this.goToStart();
+            }
+            else if (e.key === 'ArrowDown') {
+                this.goToEnd();
+            }
+        });
         this.replaceChildren(this.#board, panel, settingsDialog);
         this.#setUpPieces();
         this.#restartGame();
@@ -1056,7 +1120,6 @@ class ChessBoard extends HTMLElement {
             return false;
         if (fenReader.isPromotion) {
             const autoPromote = this.#autoPromote || (this.#isPlayingBot && this.#botColor === fenReader.inactiveColor);
-            console.log({ autoPromote });
             const promoteTo = autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
             fenReader = fenReader.requestPromotion(promoteTo);
             if (fenReader === null)
@@ -1173,7 +1236,6 @@ class ChessBoard extends HTMLElement {
                     const result = await this.#tryMove(from, to);
                     if (result) {
                         clearActiveStyle();
-                        console.log('aaa');
                     }
                     else {
                         clearActiveStyle();
@@ -1447,7 +1509,7 @@ class ChessBoard extends HTMLElement {
             if (latestFenReader.activeColor !== this.#botColor)
                 continue;
             await new Promise(resolve => setTimeout(resolve, 1000));
-            const move = this.#botPoorlyAttemptsToGetBestMove(latestFenReader);
+            const move = this.#getBestMoveInPosition(latestFenReader);
             if (!move)
                 break;
             this.#tryMove(move.from, move.to);
@@ -1455,18 +1517,25 @@ class ChessBoard extends HTMLElement {
         this.#isPlayingBot = false;
         this.#botColor = null;
     }
-    #botPoorlyAttemptsToGetBestMove(fenReader) {
-        const allLegalMoves = fenReader.getAllLegalMovesForActiveColor();
-        for (const move of allLegalMoves) {
-            const resultingPosition = fenReader.requestMove(move.from, move.to);
+    #getBestMoveInPosition(fr) {
+        const candidateMoves = fr.getAllLegalMovesForActiveColor();
+        if (candidateMoves.size === 1)
+            return [...candidateMoves][0];
+        let bestMove = [...candidateMoves][Math.floor(Math.random() * candidateMoves.size)];
+        let highestEval = 0;
+        for (const move of candidateMoves) {
+            const resultingPosition = fr.requestMove(move.from, move.to);
             if (!resultingPosition)
-                throw new Error('Bot received illegal move somehow');
-            if (resultingPosition.isCheckmate) {
-                return move;
+                continue;
+            const evaluation = resultingPosition.evaluation;
+            if ((this.#botColor === 'w' && evaluation > highestEval) || this.#botColor === 'b' && evaluation < highestEval) {
+                highestEval = evaluation;
+                bestMove = move;
             }
         }
-        return [...allLegalMoves][Math.floor(Math.random() * allLegalMoves.size)];
+        return bestMove;
     }
+    ;
 }
 customElements.define('chess-board', ChessBoard);
 const x = document.createElement('chess-board');

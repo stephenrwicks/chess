@@ -55,7 +55,7 @@ class FenReader {
 
 
         this.#isPromotion = isPromotion;
-        console.log('fr created');
+        //console.log('fr created');
 
     }
 
@@ -67,6 +67,7 @@ class FenReader {
         return this.#splitFen[0];
     }
 
+    // This is still here when the game is over on lichess
     get activeColor(): 'w' | 'b' {
         return this.#splitFen[1] as 'w' | 'b';
     }
@@ -299,6 +300,60 @@ class FenReader {
         return this.#blackCanCastleQueenside;
     }
 
+    #evaluation: number | null = null;
+    // We can make a more complicated version of this that takes in relative value based on positioning, etc.
+    // That would be the real evaluation mechanic
+    // This could itself be the entire evaluation method
+    // Different bots would just be different eval functions
+    get evaluation(): number {
+        if (this.#evaluation !== null) return this.#evaluation;
+        if (this.isCheckmate) {
+            this.#evaluation = this.activeColor === 'w' ? -Infinity : Infinity;
+            return this.#evaluation;
+        }
+
+        let e = 0;
+        for (const k in this.coordinateObject) {
+            const p = this.coordinateObject[k];
+            if (!p) continue;
+            if (p === 'Q') {
+                e += 9;
+            }
+            if (p === 'q') {
+                e -= 9;
+            }
+            if (p === 'R') {
+                e += 5;
+            }
+            if (p === 'r') {
+                e -= 5;
+            }
+            if (p === 'B' || p === 'N') {
+                e += 3
+            }
+            if (p === 'b' || p === 'n') {
+                e -= 3
+            }
+            if (p === 'P') {
+                e += 1;
+            }
+            if (p === 'p') {
+                e -= 1;
+            }
+        }
+        const e4 = this.getPieceAt('e4');
+        const d4 = this.getPieceAt('d4');
+        const e5 = this.getPieceAt('e5');
+        const d5 = this.getPieceAt('d5');
+        for (const p of [e4, d4, e5, d5]) {
+            if (!p) continue;
+            e += this.#isWhitePiece(p) ? .2 : -.2;
+        }
+
+        this.#evaluation = e;
+        return this.#evaluation;
+    }
+
     #legalMovesMemo: Record<string, Set<string>> = {};
     getLegalMoves(from: string): Set<string> {
         if (this.#legalMovesMemo[from] instanceof Set) return this.#legalMovesMemo[from];
@@ -327,6 +382,7 @@ class FenReader {
     getAllLegalMovesForActiveColor(): Set<{ from: string, to: string }> {
         const result: Set<{ from: string, to: string }> = new Set();
         const color = this.activeColor;
+        // Can probably be optimized with .reduce. Can't use .map
         for (const [from, p] of Object.entries(this.coordinateObject)) {
             if (!p) continue;
             const isWhite = this.#isWhitePiece(p);
@@ -337,8 +393,15 @@ class FenReader {
                 result.add({ from, to });
             }
         }
+
         return result;
     }
+
+    // getAllResultingPositionsForEveryLegalMove(): FenReader[] {
+    //     return this.getAllLegalMovesForActiveColor()
+    //         .map(move => this.requestMove(move.from, move.to))
+    //         .filter(x => x !== null);
+    // }
 
     #controlledSquaresMemo: Record<string, Set<string>> = {};
     getControlledSquares(from: string): Set<string> {
@@ -436,6 +499,8 @@ class FenReader {
         return { from, to };
 
     }
+
+
 
     #getPieceColorAt(coordinate: string): 'w' | 'b' | null {
         const piece = this.getPieceAt(coordinate);
@@ -1045,6 +1110,22 @@ class ChessBoard extends HTMLElement {
 
         panel.replaceChildren(mainButtons, controls, this.#notationDiv, this.#fenDiv);
 
+        this.#board.tabIndex = 0;
+        this.#board.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') {
+                this.forward();
+            }
+            else if (e.key === 'ArrowLeft') {
+                this.back();
+            }
+            else if (e.key === 'ArrowUp') {
+                this.goToStart();
+            }
+            else if (e.key === 'ArrowDown') {
+                this.goToEnd();
+            }
+        });
+
         this.replaceChildren(this.#board, panel, settingsDialog);
         this.#setUpPieces();
         this.#restartGame();
@@ -1158,7 +1239,6 @@ class ChessBoard extends HTMLElement {
         if (fenReader.isPromotion) {
             // Promotion, replace the fenReader with an updated one
             const autoPromote = this.#autoPromote || (this.#isPlayingBot && this.#botColor === fenReader.inactiveColor);
-            console.log({ autoPromote });
             const promoteTo = autoPromote ? 'Q' : await this.#promotionDialog(fenReader.inactiveColor);
             fenReader = fenReader.requestPromotion(promoteTo);
             if (fenReader === null) return false;
@@ -1296,7 +1376,6 @@ class ChessBoard extends HTMLElement {
                     const result: boolean = await this.#tryMove(from, to);
                     if (result) {
                         clearActiveStyle();
-                        console.log('aaa');
                     }
                     else {
                         clearActiveStyle();
@@ -1645,7 +1724,7 @@ class ChessBoard extends HTMLElement {
             if (latestFenReader.activeColor !== this.#botColor) continue;
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            const move = this.#botPoorlyAttemptsToGetBestMove(latestFenReader);
+            const move = this.#getBestMoveInPosition(latestFenReader);
             // Check for promotion and promote to queen or maybe make the bot autopromote
             if (!move) break;
             this.#tryMove(move.from, move.to);
@@ -1655,24 +1734,30 @@ class ChessBoard extends HTMLElement {
         this.#botColor = null;
 
     }
+    #getBestMoveInPosition(fr: FenReader): { from: string; to: string } {
+        const candidateMoves = fr.getAllLegalMovesForActiveColor();
+        if (candidateMoves.size === 1) return [...candidateMoves][0];
 
-    #botPoorlyAttemptsToGetBestMove(fenReader: FenReader): { from: string; to: string; } {
-        const allLegalMoves = fenReader.getAllLegalMovesForActiveColor();
 
-        for (const move of allLegalMoves) {
-            const resultingPosition = fenReader.requestMove(move.from, move.to);
-            if (!resultingPosition) throw new Error('Bot received illegal move somehow');
+        // Start by picking a random move as the chosen move
+        let bestMove = [...candidateMoves][Math.floor(Math.random() * candidateMoves.size)];
+        let highestEval = 0;
 
-            if (resultingPosition.isCheckmate) {
-                return move;
+        // Simple loop that evaluates every resulting position, 
+        // assigns a number value to each move, then returns the move with the highest evaluation
+        for (const move of candidateMoves) {
+            const resultingPosition = fr.requestMove(move.from, move.to);
+            if (!resultingPosition) continue;
+            const evaluation = resultingPosition.evaluation;
+
+            if ((this.#botColor === 'w' && evaluation > highestEval) || this.#botColor === 'b' && evaluation < highestEval) {
+                highestEval = evaluation;
+                bestMove = move;
             }
-
-
         }
 
-        // Didn't find anything. Return random move
-        return [...allLegalMoves][Math.floor(Math.random() * allLegalMoves.size)];
-    }
+        return bestMove;
+    };
 
     // async doRandomGame() {
     //     const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
