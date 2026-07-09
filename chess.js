@@ -1522,13 +1522,14 @@ class ChessBoard extends HTMLElement {
         if (candidateMoves.size === 1)
             return [...candidateMoves][0];
         let bestMove = [...candidateMoves][Math.floor(Math.random() * candidateMoves.size)];
-        let highestEval = 0;
+        let highestEval = this.#botColor === 'w' ? -Infinity : Infinity;
         for (const move of candidateMoves) {
             const resultingPosition = fr.requestMove(move.from, move.to);
             if (!resultingPosition)
                 continue;
             const evaluation = resultingPosition.evaluation;
-            if ((this.#botColor === 'w' && evaluation > highestEval) || this.#botColor === 'b' && evaluation < highestEval) {
+            if ((this.#botColor === 'w' && evaluation > highestEval) || (this.#botColor === 'b' && evaluation < highestEval)) {
+                console.log('we picked the best move ', move, ' with eval of ', evaluation);
                 highestEval = evaluation;
                 bestMove = move;
             }

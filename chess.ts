@@ -1741,20 +1741,26 @@ class ChessBoard extends HTMLElement {
 
         // Start by picking a random move as the chosen move
         let bestMove = [...candidateMoves][Math.floor(Math.random() * candidateMoves.size)];
-        let highestEval = 0;
+        // Init the evaluation as -infinity for white (e.g. an evaluation of -10 is still better)
+        let highestEval = this.#botColor === 'w' ? -Infinity : Infinity;
+
+
 
         // Simple loop that evaluates every resulting position, 
-        // assigns a number value to each move, then returns the move with the highest evaluation
+        // assigns a number value to each move, then returns the move with the best evaluation
+        // This loop will always pick the last one
         for (const move of candidateMoves) {
             const resultingPosition = fr.requestMove(move.from, move.to);
             if (!resultingPosition) continue;
             const evaluation = resultingPosition.evaluation;
-
-            if ((this.#botColor === 'w' && evaluation > highestEval) || this.#botColor === 'b' && evaluation < highestEval) {
+            if ((this.#botColor === 'w' && evaluation > highestEval) || (this.#botColor === 'b' && evaluation < highestEval)) {
+                console.log('we picked the best move ', move, ' with eval of ', evaluation);
                 highestEval = evaluation;
                 bestMove = move;
             }
         }
+
+
 
         return bestMove;
     };
